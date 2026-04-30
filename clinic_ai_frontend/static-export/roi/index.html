@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROI Calculator - MedGenie</title>
+    <meta name="description" content="See how much time and money MedGenie can save your practice.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --forest-50: #f0fdf4;
+            --forest-100: #dcfce7;
+            --forest-600: #16a34a;
+            --forest-700: #15803d;
+            --cream-50: #fefdfb;
+            --sand-50: #faf8f5;
+            --slate-200: #e2e8f0;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-900: #0f172a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--slate-900);
+            line-height: 1.6;
+            background: linear-gradient(135deg, var(--cream-50), white, var(--sand-50));
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.75rem;
+            text-decoration: none;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+        }
+
+        .btn-lg {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.5rem 1rem;
+            background: var(--forest-100);
+            color: var(--forest-700);
+            font-weight: 600;
+            font-size: 0.85rem;
+            border-radius: 9999px;
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--slate-200);
+        }
+
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+        }
+
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--slate-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .hero {
+            padding: 5rem 0;
+            text-align: center;
+        }
+
+        .hero-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--forest-100);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            color: var(--forest-600);
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--slate-600);
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .calculator-section {
+            padding: 4rem 0;
+            background: white;
+        }
+
+        .calculator-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .inputs-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--slate-700);
+            margin-bottom: 0.5rem;
+        }
+
+        .slider {
+            width: 100%;
+            height: 8px;
+            background: var(--slate-200);
+            border-radius: 4px;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: var(--forest-600);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .input-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--forest-600);
+            margin-top: 0.5rem;
+        }
+
+        .results-divider {
+            border-top: 1px solid var(--slate-200);
+            padding-top: 2rem;
+        }
+
+        .results-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        .result-box {
+            background: var(--forest-50);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .result-box i {
+            color: var(--forest-600);
+            margin-bottom: 0.5rem;
+        }
+
+        .result-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--forest-600);
+        }
+
+        .result-label {
+            color: var(--slate-600);
+        }
+
+        .cta {
+            padding: 5rem 0;
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+            text-align: center;
+        }
+
+        .cta h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .cta p {
+            font-size: 1.25rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        .cta .btn {
+            background: white;
+            color: var(--forest-700);
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .inputs-grid,
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container header-inner"><a href="/" class="back-link"><i data-lucide="arrow-left"
+                    style="width: 20px; height: 20px;"></i><span>Back to Home</span></a><a href="/signup"
+                class="btn btn-primary">Start Free Trial</a></div>
+    </header>
+    <section class="hero">
+        <div class="container">
+            <div class="hero-icon"><i data-lucide="dollar-sign" style="width: 40px; height: 40px;"></i></div><span
+                class="badge">Calculate Your Savings</span>
+            <h1>ROI Calculator</h1>
+            <p>See how much time and money MedGenie can save your practice.</p>
+        </div>
+    </section>
+    <section class="calculator-section">
+        <div class="container">
+            <div class="calculator-card">
+                <div class="inputs-grid">
+                    <div class="input-group"><label>Number of Providers</label><input type="range" class="slider"
+                            id="providers" min="1" max="50" value="5">
+                        <div class="input-value" id="providers-value">5</div>
+                    </div>
+                    <div class="input-group"><label>Patients Per Provider Per Day</label><input type="range"
+                            class="slider" id="patients" min="5" max="40" value="20">
+                        <div class="input-value" id="patients-value">20</div>
+                    </div>
+                </div>
+                <div class="results-divider">
+                    <h3 class="results-title">Your Estimated Annual Savings</h3>
+                    <div class="results-grid">
+                        <div class="result-box"><i data-lucide="clock" style="width: 32px; height: 32px;"></i>
+                            <div class="result-number" id="time-saved">1,667 hrs</div>
+                            <div class="result-label">Time Saved Per Year</div>
+                        </div>
+                        <div class="result-box"><i data-lucide="trending-up" style="width: 32px; height: 32px;"></i>
+                            <div class="result-number" id="money-saved">$250,000</div>
+                            <div class="result-label">Estimated Annual Value</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to see real savings?</h2>
+            <p>Start your 14-day free trial today.</p><a href="/signup" class="btn btn-lg">Start Free Trial</a>
+        </div>
+    </section>
+    <script>
+        lucide.createIcons();
+        const providersSlider = document.getElementById('providers');
+        const patientsSlider = document.getElementById('patients');
+        const providersValue = document.getElementById('providers-value');
+        const patientsValue = document.getElementById('patients-value');
+        const timeSaved = document.getElementById('time-saved');
+        const moneySaved = document.getElementById('money-saved');
+        function calculate() {
+            const providers = parseInt(providersSlider.value);
+            const patients = parseInt(patientsSlider.value);
+            providersValue.textContent = providers;
+            patientsValue.textContent = patients;
+            const timeSavedPerPatient = 4; // minutes
+            const hourlyRate = 150; // $/hour
+            const workingDays = 250; // per year
+            const annualTimeSavedHrs = Math.round(providers * patients * timeSavedPerPatient * workingDays / 60);
+            const annualSavings = annualTimeSavedHrs * hourlyRate;
+            timeSaved.textContent = annualTimeSavedHrs.toLocaleString() + ' hrs';
+            moneySaved.textContent = '$' + annualSavings.toLocaleString();
+        }
+        providersSlider.addEventListener('input', calculate);
+        patientsSlider.addEventListener('input', calculate);
+        calculate();
+    </script>
+</body>
+
+</html>

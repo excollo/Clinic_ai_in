@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Templates - MedGenie</title>
+    <meta name="description"
+        content="Access hundreds of peer-reviewed SOAP note templates shared by healthcare professionals worldwide.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --forest-50: #f0fdf4;
+            --forest-100: #dcfce7;
+            --forest-200: #bbf7d0;
+            --forest-600: #16a34a;
+            --forest-700: #15803d;
+            --forest-800: #166534;
+            --forest-900: #14532d;
+            --cream-50: #fefdfb;
+            --sand-50: #faf8f5;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-900: #0f172a;
+            --amber-50: #fffbeb;
+            --amber-100: #fef3c7;
+            --amber-200: #fde68a;
+            --amber-400: #fbbf24;
+            --amber-500: #f59e0b;
+            --amber-600: #d97706;
+            --amber-700: #b45309;
+            --amber-900: #78350f;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--slate-900);
+            line-height: 1.6;
+            background: linear-gradient(135deg, var(--cream-50), white, var(--sand-50));
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.75rem;
+            text-decoration: none;
+            border: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(22, 163, 74, 0.3);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--slate-600);
+        }
+
+        .btn-ghost:hover {
+            background: var(--slate-100);
+        }
+
+        .btn-amber {
+            background: var(--amber-600);
+            color: white;
+        }
+
+        .btn-amber:hover {
+            background: var(--amber-700);
+        }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.5rem 1rem;
+            background: var(--forest-100);
+            color: var(--forest-700);
+            font-weight: 600;
+            font-size: 0.85rem;
+            border-radius: 9999px;
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--slate-200);
+        }
+
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+        }
+
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--slate-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            color: var(--forest-600);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, var(--forest-900), var(--forest-800), var(--forest-900));
+            color: white;
+            padding: 4rem 0;
+            text-align: center;
+        }
+
+        .hero-icon {
+            width: 64px;
+            height: 64px;
+            background: var(--amber-500);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--forest-200);
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-top: 3rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .stat-card i {
+            color: var(--amber-400);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--forest-200);
+        }
+
+        .filter-bar {
+            background: white;
+            border-bottom: 1px solid var(--slate-200);
+            padding: 1.5rem 0;
+            position: sticky;
+            top: 80px;
+            z-index: 40;
+        }
+
+        .filter-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.75rem;
+            border: 1px solid var(--slate-300);
+            border-radius: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--forest-600);
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-400);
+        }
+
+        .category-tabs {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .category-tab {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--slate-100);
+            color: var(--slate-700);
+        }
+
+        .category-tab:hover {
+            background: var(--slate-200);
+        }
+
+        .category-tab.active {
+            background: var(--forest-600);
+            color: white;
+        }
+
+        .main-content {
+            padding: 3rem 0;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .sidebar-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+        }
+
+        .sidebar-card-content {
+            padding: 1.5rem;
+        }
+
+        .sidebar-card h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .sidebar-card h3 i {
+            color: var(--amber-500);
+        }
+
+        .contributor {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .contributor-rank {
+            width: 28px;
+            height: 28px;
+            background: var(--forest-100);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--forest-700);
+            flex-shrink: 0;
+        }
+
+        .contributor-info {
+            flex: 1;
+        }
+
+        .contributor-name {
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--slate-900);
+        }
+
+        .contributor-meta {
+            font-size: 0.75rem;
+            color: var(--slate-500);
+        }
+
+        .share-card {
+            background: linear-gradient(135deg, var(--amber-50), var(--amber-100));
+            border: 1px solid var(--amber-200);
+        }
+
+        .share-card .sidebar-card-content {
+            text-align: center;
+        }
+
+        .share-card i {
+            color: var(--amber-600);
+            margin-bottom: 0.75rem;
+        }
+
+        .share-card h3 {
+            justify-content: center;
+            color: var(--amber-900);
+        }
+
+        .share-card p {
+            font-size: 0.875rem;
+            color: var(--amber-700);
+            margin-bottom: 1rem;
+        }
+
+        .templates-section {}
+
+        .templates-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .templates-header p {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        .templates-header .updated {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--slate-500);
+        }
+
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        .template-card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+
+        .template-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .template-card-content {
+            padding: 1.5rem;
+        }
+
+        .template-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+        }
+
+        .template-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .template-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            background: var(--forest-100);
+            color: var(--forest-700);
+            border-radius: 0.25rem;
+            font-weight: 500;
+        }
+
+        .template-desc {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-bottom: 1rem;
+        }
+
+        .template-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: var(--slate-500);
+            margin-bottom: 1rem;
+        }
+
+        .template-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .template-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .template-tag {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            background: var(--slate-100);
+            color: var(--slate-600);
+            border-radius: 0.25rem;
+        }
+
+        .template-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .template-actions .btn {
+            flex: 1;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        .btn-outline {
+            background: white;
+            color: var(--forest-700);
+            border: 1px solid var(--slate-200);
+        }
+
+        .btn-outline:hover {
+            border-color: var(--forest-600);
+            background: var(--forest-50);
+        }
+
+        @media (max-width: 1024px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: none;
+            }
+
+            .templates-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hero h1 {
+                font-size: 1.75rem;
+            }
+
+            .filter-content {
+                flex-direction: column;
+            }
+
+            .category-tabs {
+                width: 100%;
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                padding-bottom: 0.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container header-inner">
+            <a href="/" class="back-link">
+                <i data-lucide="arrow-left" style="width: 20px; height: 20px;"></i>
+                <span>Back to Home</span>
+            </a>
+            <div class="header-actions">
+                <a href="/login" class="btn btn-ghost">Sign In</a>
+                <a href="/signup" class="btn btn-primary">Join Community</a>
+            </div>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-icon">
+                <i data-lucide="sparkles" style="width: 32px; height: 32px; color: white;"></i>
+            </div>
+            <h1>Community Template Library</h1>
+            <p>Access hundreds of peer-reviewed SOAP note templates shared by healthcare professionals worldwide</p>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <i data-lucide="file-text" style="width: 32px; height: 32px;"></i>
+                    <div class="stat-number">250+</div>
+                    <div class="stat-label">Templates</div>
+                </div>
+                <div class="stat-card">
+                    <i data-lucide="trending-up" style="width: 32px; height: 32px;"></i>
+                    <div class="stat-number">15,000+</div>
+                    <div class="stat-label">Total Uses</div>
+                </div>
+                <div class="stat-card">
+                    <i data-lucide="users" style="width: 32px; height: 32px;"></i>
+                    <div class="stat-number">120+</div>
+                    <div class="stat-label">Contributors</div>
+                </div>
+                <div class="stat-card">
+                    <i data-lucide="star" style="width: 32px; height: 32px;"></i>
+                    <div class="stat-number">4.8</div>
+                    <div class="stat-label">Avg Rating</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="filter-bar">
+        <div class="container">
+            <div class="filter-content">
+                <div class="search-box">
+                    <i data-lucide="search" style="width: 20px; height: 20px;"></i>
+                    <input type="text" placeholder="Search community templates...">
+                </div>
+                <div class="category-tabs">
+                    <button class="category-tab active">All</button>
+                    <button class="category-tab">General</button>
+                    <button class="category-tab">Cardiology</button>
+                    <button class="category-tab">Pediatrics</button>
+                    <button class="category-tab">Dermatology</button>
+                    <button class="category-tab">Mental Health</button>
+                    <button class="category-tab">Orthopedics</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="container">
+            <div class="content-grid">
+                <div class="sidebar">
+                    <div class="sidebar-card">
+                        <div class="sidebar-card-content">
+                            <h3><i data-lucide="award" style="width: 20px; height: 20px;"></i> Top Contributors</h3>
+                            <div class="contributor">
+                                <div class="contributor-rank">1</div>
+                                <div class="contributor-info">
+                                    <div class="contributor-name">Dr. Maria Lopez</div>
+                                    <div class="contributor-meta">15 templates • Psychiatry</div>
+                                </div>
+                            </div>
+                            <div class="contributor">
+                                <div class="contributor-rank">2</div>
+                                <div class="contributor-info">
+                                    <div class="contributor-name">Dr. Robert Chen</div>
+                                    <div class="contributor-meta">12 templates • Orthopedics</div>
+                                </div>
+                            </div>
+                            <div class="contributor">
+                                <div class="contributor-rank">3</div>
+                                <div class="contributor-info">
+                                    <div class="contributor-name">Dr. Anita Patel</div>
+                                    <div class="contributor-meta">10 templates • Neurology</div>
+                                </div>
+                            </div>
+                            <div class="contributor">
+                                <div class="contributor-rank">4</div>
+                                <div class="contributor-info">
+                                    <div class="contributor-name">Dr. James Wilson</div>
+                                    <div class="contributor-meta">8 templates • Cardiology</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-card share-card">
+                        <div class="sidebar-card-content">
+                            <i data-lucide="star" style="width: 48px; height: 48px;"></i>
+                            <h3>Share Your Templates</h3>
+                            <p>Help the community by sharing your best clinical templates</p>
+                            <a href="/signup" class="btn btn-amber" style="width: 100%; justify-content: center;">Get
+                                Started</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="templates-section">
+                    <div class="templates-header">
+                        <p>Showing 12 templates</p>
+                        <div class="updated">
+                            <i data-lucide="clock" style="width: 16px; height: 16px;"></i>
+                            <span>Updated daily</span>
+                        </div>
+                    </div>
+
+                    <div class="templates-grid">
+                        <div class="template-card">
+                            <div class="template-card-content">
+                                <div class="template-header">
+                                    <div class="template-title">Comprehensive Depression Screening</div>
+                                    <span class="template-badge">Mental Health</span>
+                                </div>
+                                <p class="template-desc">PHQ-9 integrated SOAP template with automatic severity scoring
+                                    and treatment recommendations.</p>
+                                <div class="template-meta">
+                                    <span><i data-lucide="download" style="width: 14px; height: 14px;"></i> 2,450
+                                        uses</span>
+                                    <span><i data-lucide="star" style="width: 14px; height: 14px;"></i> 4.9</span>
+                                    <span><i data-lucide="user" style="width: 14px; height: 14px;"></i> Dr. Maria
+                                        Lopez</span>
+                                </div>
+                                <div class="template-tags">
+                                    <span class="template-tag">PHQ-9</span>
+                                    <span class="template-tag">Depression</span>
+                                    <span class="template-tag">Screening</span>
+                                </div>
+                                <div class="template-actions">
+                                    <button class="btn btn-outline">Preview</button>
+                                    <a href="/signup" class="btn btn-primary">Use Template</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="template-card">
+                            <div class="template-card-content">
+                                <div class="template-header">
+                                    <div class="template-title">Pediatric Well-Child Visit</div>
+                                    <span class="template-badge">Pediatrics</span>
+                                </div>
+                                <p class="template-desc">Age-appropriate developmental milestones, vaccination tracking,
+                                    and growth chart integration.</p>
+                                <div class="template-meta">
+                                    <span><i data-lucide="download" style="width: 14px; height: 14px;"></i> 1,820
+                                        uses</span>
+                                    <span><i data-lucide="star" style="width: 14px; height: 14px;"></i> 4.8</span>
+                                    <span><i data-lucide="user" style="width: 14px; height: 14px;"></i> Dr. Sarah
+                                        Kim</span>
+                                </div>
+                                <div class="template-tags">
+                                    <span class="template-tag">Well-Child</span>
+                                    <span class="template-tag">Milestones</span>
+                                    <span class="template-tag">Vaccines</span>
+                                </div>
+                                <div class="template-actions">
+                                    <button class="btn btn-outline">Preview</button>
+                                    <a href="/signup" class="btn btn-primary">Use Template</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="template-card">
+                            <div class="template-card-content">
+                                <div class="template-header">
+                                    <div class="template-title">Cardiac Risk Assessment</div>
+                                    <span class="template-badge">Cardiology</span>
+                                </div>
+                                <p class="template-desc">ASCVD risk calculator with lipid panel integration and statin
+                                    therapy recommendations.</p>
+                                <div class="template-meta">
+                                    <span><i data-lucide="download" style="width: 14px; height: 14px;"></i> 1,560
+                                        uses</span>
+                                    <span><i data-lucide="star" style="width: 14px; height: 14px;"></i> 4.7</span>
+                                    <span><i data-lucide="user" style="width: 14px; height: 14px;"></i> Dr. James
+                                        Wilson</span>
+                                </div>
+                                <div class="template-tags">
+                                    <span class="template-tag">ASCVD</span>
+                                    <span class="template-tag">Lipids</span>
+                                    <span class="template-tag">Prevention</span>
+                                </div>
+                                <div class="template-actions">
+                                    <button class="btn btn-outline">Preview</button>
+                                    <a href="/signup" class="btn btn-primary">Use Template</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="template-card">
+                            <div class="template-card-content">
+                                <div class="template-header">
+                                    <div class="template-title">Knee Pain Evaluation</div>
+                                    <span class="template-badge">Orthopedics</span>
+                                </div>
+                                <p class="template-desc">Structured exam findings with Ottawa rules integration and
+                                    imaging decision support.</p>
+                                <div class="template-meta">
+                                    <span><i data-lucide="download" style="width: 14px; height: 14px;"></i> 1,340
+                                        uses</span>
+                                    <span><i data-lucide="star" style="width: 14px; height: 14px;"></i> 4.8</span>
+                                    <span><i data-lucide="user" style="width: 14px; height: 14px;"></i> Dr. Robert
+                                        Chen</span>
+                                </div>
+                                <div class="template-tags">
+                                    <span class="template-tag">Knee</span>
+                                    <span class="template-tag">MSK</span>
+                                    <span class="template-tag">Ottawa Rules</span>
+                                </div>
+                                <div class="template-actions">
+                                    <button class="btn btn-outline">Preview</button>
+                                    <a href="/signup" class="btn btn-primary">Use Template</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        // Category tab interactivity
+        document.querySelectorAll('.category-tab').forEach(tab => {
+            tab.addEventListener('click', function () {
+                document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+
+</html>

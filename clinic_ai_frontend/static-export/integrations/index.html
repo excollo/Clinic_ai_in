@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrations - MedGenie</title>
+    <meta name="description" content="Connect MedGenie with your existing EHR and practice management systems.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --forest-50: #f0fdf4;
+            --forest-100: #dcfce7;
+            --forest-600: #16a34a;
+            --forest-700: #15803d;
+            --cream-50: #fefdfb;
+            --sand-50: #faf8f5;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-500: #64748b;
+            --slate-600: #475569;
+            --slate-900: #0f172a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--slate-900);
+            line-height: 1.6;
+            background: linear-gradient(135deg, var(--cream-50), white, var(--sand-50));
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.75rem;
+            text-decoration: none;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+        }
+
+        .btn-lg {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.5rem 1rem;
+            background: var(--forest-100);
+            color: var(--forest-700);
+            font-weight: 600;
+            font-size: 0.85rem;
+            border-radius: 9999px;
+        }
+
+        .badge-success {
+            background: var(--forest-100);
+            color: var(--forest-700);
+        }
+
+        .badge-secondary {
+            background: var(--slate-100);
+            color: var(--slate-600);
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--slate-200);
+        }
+
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+        }
+
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--slate-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .hero {
+            padding: 5rem 0;
+            text-align: center;
+        }
+
+        .hero-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--forest-100);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            color: var(--forest-600);
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--slate-600);
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .integrations-section {
+            padding: 4rem 0;
+            background: white;
+        }
+
+        .integrations-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .integration-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .integration-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .integration-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--slate-100);
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--slate-600);
+        }
+
+        .integration-card h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .integration-card p {
+            font-size: 0.9rem;
+            color: var(--slate-600);
+        }
+
+        .features-section {
+            padding: 4rem 0;
+            background: var(--slate-50);
+        }
+
+        .features-row {
+            display: flex;
+            justify-content: center;
+            gap: 4rem;
+        }
+
+        .feature-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .feature-item i {
+            color: var(--forest-600);
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-item h3 {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .feature-item p {
+            font-size: 0.9rem;
+            color: var(--slate-600);
+        }
+
+        .cta {
+            padding: 5rem 0;
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+            text-align: center;
+        }
+
+        .cta h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .cta p {
+            font-size: 1.25rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        .cta .btn {
+            background: white;
+            color: var(--forest-700);
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .integrations-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .features-row {
+                flex-direction: column;
+                gap: 2rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container header-inner"><a href="/" class="back-link"><i data-lucide="arrow-left"
+                    style="width: 20px; height: 20px;"></i><span>Back to Home</span></a><a href="/signup"
+                class="btn btn-primary">Start Free Trial</a></div>
+    </header>
+    <section class="hero">
+        <div class="container">
+            <div class="hero-icon"><i data-lucide="globe" style="width: 40px; height: 40px;"></i></div><span
+                class="badge">Connect Your Systems</span>
+            <h1>Integrations</h1>
+            <p>MedGenie connects with your existing EHR and practice management systems for a seamless workflow.</p>
+        </div>
+    </section>
+    <section class="integrations-section">
+        <div class="container">
+            <div class="integrations-grid">
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-success"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Available</span>
+                    </div>
+                    <h3>Epic</h3>
+                    <p>Seamless integration with Epic EHR systems.</p>
+                </div>
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-success"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Available</span>
+                    </div>
+                    <h3>Cerner</h3>
+                    <p>Connect with Cerner for unified patient data.</p>
+                </div>
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-success"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Available</span>
+                    </div>
+                    <h3>Athenahealth</h3>
+                    <p>Integrate with Athenahealth practice management.</p>
+                </div>
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-secondary"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Coming Soon</span>
+                    </div>
+                    <h3>Allscripts</h3>
+                    <p>Connect with Allscripts EHR platform.</p>
+                </div>
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-secondary"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Coming Soon</span>
+                    </div>
+                    <h3>NextGen</h3>
+                    <p>Integration with NextGen Healthcare.</p>
+                </div>
+                <div class="integration-card">
+                    <div class="integration-header">
+                        <div class="integration-icon"><i data-lucide="database" style="width: 24px; height: 24px;"></i>
+                        </div><span class="badge badge-success"
+                            style="font-size: 0.75rem; padding: 0.25rem 0.75rem;">Available</span>
+                    </div>
+                    <h3>Custom API</h3>
+                    <p>Build custom integrations with our REST API.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="features-section">
+        <div class="container">
+            <div class="features-row">
+                <div class="feature-item"><i data-lucide="shield" style="width: 40px; height: 40px;"></i>
+                    <h3>HIPAA Compliant</h3>
+                    <p>All integrations meet HIPAA security standards.</p>
+                </div>
+                <div class="feature-item"><i data-lucide="zap" style="width: 40px; height: 40px;"></i>
+                    <h3>Real-time Sync</h3>
+                    <p>Data syncs instantly between systems.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="cta">
+        <div class="container">
+            <h2>Need a custom integration?</h2>
+            <p>Contact our team to discuss your specific needs.</p><a href="mailto:integrations@medgenie.ai"
+                class="btn btn-lg">Contact Us</a>
+        </div>
+    </section>
+    <script>lucide.createIcons();</script>
+</body>
+
+</html>

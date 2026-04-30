@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>For Hospitals - MedGenie</title>
+    <meta name="description" content="Enterprise-grade AI documentation for health systems.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --forest-50: #f0fdf4;
+            --forest-100: #dcfce7;
+            --forest-600: #16a34a;
+            --forest-700: #15803d;
+            --cream-50: #fefdfb;
+            --sand-50: #faf8f5;
+            --slate-50: #f8fafc;
+            --slate-200: #e2e8f0;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-900: #0f172a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--slate-900);
+            line-height: 1.6;
+            background: linear-gradient(135deg, var(--cream-50), white, var(--sand-50));
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.75rem;
+            text-decoration: none;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(22, 163, 74, 0.3);
+        }
+
+        .btn-lg {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.5rem 1rem;
+            background: var(--forest-100);
+            color: var(--forest-700);
+            font-weight: 600;
+            font-size: 0.85rem;
+            border-radius: 9999px;
+        }
+
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--slate-200);
+        }
+
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 80px;
+        }
+
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--slate-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            color: var(--forest-600);
+        }
+
+        .hero {
+            padding: 5rem 0;
+            text-align: center;
+        }
+
+        .hero-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--forest-100);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            color: var(--forest-600);
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--slate-600);
+            max-width: 640px;
+            margin: 0 auto 2rem;
+        }
+
+        .features-section {
+            padding: 4rem 0;
+            background: white;
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .benefits-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .benefit-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .benefit-item i {
+            color: var(--forest-600);
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .benefit-item span {
+            color: var(--slate-700);
+        }
+
+        .trust-section {
+            padding: 4rem 0;
+            background: var(--slate-50);
+        }
+
+        .trust-badges {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .trust-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--slate-600);
+            font-weight: 500;
+        }
+
+        .trust-badge i {
+            color: var(--forest-600);
+        }
+
+        .trust-text {
+            text-align: center;
+            color: var(--slate-600);
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .cta {
+            padding: 5rem 0;
+            background: linear-gradient(135deg, var(--forest-600), var(--forest-700));
+            color: white;
+            text-align: center;
+        }
+
+        .cta h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .cta p {
+            font-size: 1.25rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        .cta .btn {
+            background: white;
+            color: var(--forest-700);
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .benefits-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .trust-badges {
+                flex-direction: column;
+                align-items: center;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container header-inner"><a href="/" class="back-link"><i data-lucide="arrow-left"
+                    style="width: 20px; height: 20px;"></i><span>Back to Home</span></a><a href="/partners"
+                class="btn btn-primary">Contact Sales</a></div>
+    </header>
+    <section class="hero">
+        <div class="container">
+            <div class="hero-icon"><i data-lucide="building-2" style="width: 40px; height: 40px;"></i></div><span
+                class="badge">Enterprise Solutions</span>
+            <h1>Built for Health Systems</h1>
+            <p>Scale efficiently across your organization. Enterprise-grade security, custom integrations, and dedicated
+                support for large healthcare systems.</p><a href="/partners" class="btn btn-primary btn-lg">Talk to
+                Sales<i data-lucide="chevron-right" style="width: 20px; height: 20px;"></i></a>
+        </div>
+    </section>
+    <section class="features-section">
+        <div class="container">
+            <h2 class="section-title">Enterprise Features</h2>
+            <div class="benefits-card">
+                <div class="benefits-grid">
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Enterprise-grade security and compliance</span>
+                    </div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>SSO and Active Directory integration</span>
+                    </div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Custom AI model training on your
+                            workflows</span></div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Unlimited provider accounts</span></div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Dedicated customer success manager</span></div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>SLA guarantees and 24/7 support</span></div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Advanced analytics and reporting</span></div>
+                    <div class="benefit-item"><i data-lucide="check-circle-2"
+                            style="width: 20px; height: 20px;"></i><span>Multi-location deployment</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="trust-section">
+        <div class="container">
+            <div class="trust-badges">
+                <div class="trust-badge"><i data-lucide="shield" style="width: 24px; height: 24px;"></i><span>HIPAA
+                        Compliant</span></div>
+                <div class="trust-badge"><i data-lucide="lock" style="width: 24px; height: 24px;"></i><span>SOC 2 Type
+                        II</span></div>
+            </div>
+            <p class="trust-text">Trusted by healthcare organizations of all sizes. Our security-first approach ensures
+                your data is protected.</p>
+        </div>
+    </section>
+    <section class="cta">
+        <div class="container">
+            <h2>Ready to scale your documentation?</h2>
+            <p>Contact our enterprise team to discuss your organization's needs.</p><a href="/partners"
+                class="btn btn-lg">Schedule a Demo</a>
+        </div>
+    </section>
+    <script>lucide.createIcons();</script>
+</body>
+
+</html>

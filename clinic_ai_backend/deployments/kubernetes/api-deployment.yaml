@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clinic-ai-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: clinic-ai-api
+  template:
+    metadata:
+      labels:
+        app: clinic-ai-api
+    spec:
+      containers:
+        - name: api
+          image: clinic-ai-api:latest

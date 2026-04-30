@@ -1,0 +1,16 @@
+Generate a patient-facing post-visit summary in strict JSON.
+
+Respond entirely in {{language_name}}. Use simple words a patient with no medical background can understand.
+
+Use this context JSON:
+{{context_json}}
+
+Return ONLY a valid JSON object with exactly these keys:
+- visit_reason (string)
+- what_doctor_found (string)
+- medicines_to_take (array of strings)
+- tests_recommended (array of strings)
+- self_care (array of strings)
+- warning_signs (array of strings)
+- follow_up (string, human-readable instructions for the patient)
+- next_visit_date (string or null): next follow-up visit date as ISO 8601 calendar date YYYY-MM-DD, or full datetime ISO if time is known; null only if no follow-up visit was scheduled or discussed

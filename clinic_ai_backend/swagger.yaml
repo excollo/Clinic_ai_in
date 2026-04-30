@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: Clinic AI India API
+  version: 0.1.0
+  description: Starter OpenAPI specification for Clinic AI India backend.
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: Health
+  - name: Patients
+  - name: Intake
+  - name: Notes
+  - name: Transcription
+  - name: Audio
+  - name: Workflow
+  - name: Doctor
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: Service healthy
+  /patients:
+    get:
+      tags: [Patients]
+      summary: List patients
+      responses:
+        "200":
+          description: OK
+components:
+  schemas: {}
+  securitySchemes: {}

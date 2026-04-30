@@ -1,0 +1,21 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-clinic-surface font-sans text-clinic-ink antialiased;
+  }
+}
+
+@layer components {
+  .clinic-card {
+    @apply rounded-2xl border border-clinic-border bg-clinic-card shadow-sm;
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clinic-primary focus-visible:ring-offset-2;
+  }
+}

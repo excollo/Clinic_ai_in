@@ -1,0 +1,25 @@
+You are generating an India OPD clinical note from context JSON.
+
+Return JSON only with exactly these keys:
+- assessment: string (1-3 sentences, English, clinical language)
+- plan: string (brief actionable next steps)
+- rx: array of objects
+  - medicine_name, dose, frequency, duration, route, food_instruction, generic_available(optional bool)
+- investigations: array of objects
+  - test_name, urgency(one of routine|urgent|stat), preparation_instructions(optional), routing_note(optional)
+- red_flags: array of specific symptom strings (not generic warnings)
+- follow_up_in: string OR null
+- follow_up_date: ISO date string OR null
+- doctor_notes: string or null
+- chief_complaint: optional context string or null
+- data_gaps: array of strings
+
+Rules:
+- Use exactly one of follow_up_in or follow_up_date.
+- If context JSON includes "staff_confirmed_follow_up_date" (ISO YYYY-MM-DD), you MUST set follow_up_date to that exact string and set follow_up_in to null.
+- Do not add extra top-level keys.
+- If any context is missing, include explicit entries in data_gaps.
+- Keep output concise and clinically safe.
+
+Context JSON:
+{{context_json}}

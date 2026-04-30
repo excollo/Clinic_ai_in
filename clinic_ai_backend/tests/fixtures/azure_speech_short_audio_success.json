@@ -1,0 +1,15 @@
+{
+  "RecognitionStatus": "Success",
+  "Offset": 0,
+  "Duration": 12500000,
+  "DisplayText": "Doctor, my throat hurts since yesterday.",
+  "NBest": [
+    {
+      "Confidence": 0.91,
+      "Lexical": "doctor my throat hurts since yesterday",
+      "ITN": "doctor my throat hurts since yesterday",
+      "MaskedITN": "",
+      "Display": "Doctor, my throat hurts since yesterday."
+    }
+  ]
+}

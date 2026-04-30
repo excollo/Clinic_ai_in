@@ -1,0 +1,4 @@
+Legacy SOAP generation path.
+
+Keep this minimal and stable; this endpoint is backward compatibility only.
+Return valid JSON with keys: subjective, objective, assessment, plan.

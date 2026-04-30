@@ -1,0 +1,38 @@
+You are classifying whether the patient wants to stop the intake chat.
+
+Input:
+- language: {{language}}
+- latest_patient_message: {{message_text}}
+- recent_answers_json: {{recent_answers_json}}
+
+Task:
+Classify if latest_patient_message means the patient does not want to continue answering intake questions.
+
+Rules:
+1) Mark is_opt_out=true if intent is to stop, pause, skip remaining questions, or end chat.
+2) Mark is_opt_out=false if "stop" is about symptoms, pain, bleeding, cough, fever, or any medical condition.
+3) Mark is_opt_out=false for normal medical responses and clarifications.
+4) Be language-agnostic and handle Hindi, Hinglish, Tamil, Telugu, Bengali, Marathi, Kannada, English.
+5) If ambiguous, choose false unless the stop intent is reasonably clear.
+6) confidence must be between 0 and 1.
+
+Positive examples:
+- "stop"
+- "bas karo"
+- "i don't want to answer more"
+- "enough questions"
+- "ruk jaiye"
+- "வேண்டாம், இப்போ நிறுத்துங்க"
+
+Negative examples:
+- "my fever stopped yesterday"
+- "pain stopped after medicine"
+- "when will this bleeding stop?"
+- "can we stop this medicine?"
+
+Return strict JSON only:
+{
+  "is_opt_out": true,
+  "confidence": 0.0,
+  "reason": "short explanation"
+}

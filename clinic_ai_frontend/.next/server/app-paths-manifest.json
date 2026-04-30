@@ -1,0 +1,8 @@
+{
+  "/[locale]/clinic/dashboard/page": "app/[locale]/clinic/dashboard/page.js",
+  "/[locale]/clinic/follow-through/page": "app/[locale]/clinic/follow-through/page.js",
+  "/[locale]/clinic/manage-appointments/page": "app/[locale]/clinic/manage-appointments/page.js",
+  "/[locale]/clinic/calendar/page": "app/[locale]/clinic/calendar/page.js",
+  "/[locale]/clinic/patients/page": "app/[locale]/clinic/patients/page.js",
+  "/[locale]/clinic/settings/page": "app/[locale]/clinic/settings/page.js"
+}

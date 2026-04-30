@@ -1,0 +1,1 @@
+export default function LanguagesTab(){return <div className="grid grid-cols-2 gap-2">{["hindi","english","marathi","tamil","telugu","bengali","kannada"].map((l)=><label key={l} className="flex items-center gap-2 rounded-xl border border-clinic-border bg-white p-2"><input type="checkbox" defaultChecked={["hindi","english"].includes(l)} /> {l}</label>)}</div>;}
