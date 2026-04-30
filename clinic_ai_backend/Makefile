@@ -1,4 +1,4 @@
-.PHONY: install dev run test lint format worker sweeper
+.PHONY: install dev run api test lint format worker sweeper
 
 install:
 	pip install -r requirements.txt
@@ -8,6 +8,9 @@ dev:
 
 run:
 	python startup.py
+
+api:
+	uvicorn src.app:create_app --reload --factory
 
 test:
 	pytest -q

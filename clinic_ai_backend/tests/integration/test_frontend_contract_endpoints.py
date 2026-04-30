@@ -173,7 +173,7 @@ async def test_register_invalid_age():
 
 
 @pytest.mark.asyncio
-async def test_abha_lookup_link_and_scan_share():
+async def test_abha_lookup_link_and_scan_share_returns_503_when_not_configured():
     async with _client() as client:
         reg = await client.post(
             "/patients/register",
@@ -200,9 +200,11 @@ async def test_abha_lookup_link_and_scan_share():
             json={"abha_qr_data": "ABHA-QR-CONTENT-12345678901234"},
             headers=AUTH_HEADERS,
         )
-    assert lookup.status_code == 200
-    assert link.status_code == 200
-    assert scan_share.status_code == 200
+    assert lookup.status_code == 503
+    assert link.status_code == 503
+    assert scan_share.status_code == 503
+    assert lookup.json()["detail"]["status"] == "abdm_not_configured"
+    assert lookup.json()["detail"]["fallback"] == "manual_registration"
 
 
 @pytest.mark.asyncio

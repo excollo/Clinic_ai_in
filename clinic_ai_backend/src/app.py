@@ -1,4 +1,8 @@
-"""FastAPI application factory module."""
+"""FastAPI application factory module.
+
+Canonical backend ASGI entry point:
+`uvicorn src.app:create_app --reload --factory`
+"""
 from contextlib import asynccontextmanager
 import os
 from fastapi import FastAPI
@@ -20,17 +24,22 @@ from src.api.routers import (
     whatsapp,
     workflow,
 )
+from src.middleware.dpdp_audit_middleware import DPDPAuditMiddleware
+from src.core.config import get_settings
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Start/stop background transcription workers with app lifecycle."""
-    start_background_workers()
+    settings = get_settings()
+    if settings.run_transcription_workers_in_api:
+        start_background_workers()
     try:
         yield
     finally:
-        await stop_background_workers()
+        if settings.run_transcription_workers_in_api:
+            await stop_background_workers()
 
 
 def create_app() -> FastAPI:
@@ -48,6 +57,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(DPDPAuditMiddleware)
     app.include_router(auth.router)
     app.include_router(health.router)
     app.include_router(patients.router)

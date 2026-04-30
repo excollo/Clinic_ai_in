@@ -1,0 +1,1 @@
+"""Transcription queue adapter package."""

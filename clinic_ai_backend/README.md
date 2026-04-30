@@ -13,6 +13,13 @@ copy .env.example .env
 make dev
 ```
 
+## API Startup (Canonical)
+```bash
+uvicorn src.app:create_app --reload --factory
+# or
+make api
+```
+
 ## Environment Variables
 | Variable | Required | Description | Example |
 |---|---|---|---|

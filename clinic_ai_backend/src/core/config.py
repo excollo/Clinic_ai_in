@@ -5,6 +5,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.core.errors import ConfigurationError
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -17,6 +19,7 @@ class Settings:
         # Resolve values at instantiation time instead of import time, so
         # restarts pick up current env/.env consistently.
         self.app_name: str = "Clinic AI India Backend"
+        self.app_version: str = os.getenv("APP_VERSION", "0.1.0")
         self.api_host: str = os.getenv("API_HOST", "0.0.0.0")
         self.api_port: int = int(os.getenv("API_PORT", "8000"))
         self.mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017/clinic_ai")
@@ -65,6 +68,14 @@ class Settings:
         )
         self.azure_speech_region: str = os.getenv("AZURE_SPEECH_REGION", "")
         self.azure_speech_endpoint: str = os.getenv("AZURE_SPEECH_ENDPOINT", "")
+        self.azure_speech_batch_transcription_locale: str = os.getenv(
+            "AZURE_SPEECH_BATCH_TRANSCRIPTION_LOCALE", "hi-IN"
+        )
+        self.azure_queue_connection_string: str = os.getenv("AZURE_QUEUE_CONNECTION_STRING", "")
+        self.azure_queue_name: str = os.getenv("AZURE_QUEUE_NAME", "")
+        self.azure_queue_poison_name: str = os.getenv("AZURE_QUEUE_POISON_NAME", "")
+        self.azure_blob_connection_string: str = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        self.azure_blob_container: str = os.getenv("AZURE_BLOB_CONTAINER", "")
         self.transcription_confidence_threshold: float = float(
             os.getenv("TRANSCRIPTION_CONFIDENCE_THRESHOLD", "0.75")
         )
@@ -108,6 +119,16 @@ class Settings:
         self.transcription_worker_poll_interval_sec: float = float(
             os.getenv("TRANSCRIPTION_WORKER_POLL_INTERVAL_SEC", "1.0")
         )
+        self.transcription_worker_heartbeat_interval_sec: int = int(
+            os.getenv("TRANSCRIPTION_WORKER_HEARTBEAT_INTERVAL_SEC", "30")
+        )
+        self.transcription_worker_dead_after_sec: int = int(
+            os.getenv("TRANSCRIPTION_WORKER_DEAD_AFTER_SEC", "90")
+        )
+        self.transcription_worker_id: str = os.getenv("TRANSCRIPTION_WORKER_ID", "clinic-ai-worker")
+        self.run_transcription_workers_in_api: bool = (
+            os.getenv("RUN_TRANSCRIPTION_WORKERS_IN_API", "false").lower() == "true"
+        )
         self.use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"
         self.local_audio_storage_path: str = os.getenv("LOCAL_AUDIO_STORAGE_PATH", "/tmp/clinic_audio")
         self.mongo_audio_bucket_name: str = os.getenv("MONGO_AUDIO_BUCKET_NAME", "audio_blobs")
@@ -120,6 +141,23 @@ class Settings:
         self.msg91_template_id: str = os.getenv("MSG91_TEMPLATE_ID", "")
         self.access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
         self.refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+        self.abdm_enabled: bool = os.getenv("ABDM_ENABLED", "false").lower() == "true"
+
+        _tqb = os.getenv("TRANSCRIPTION_QUEUE_BACKEND", "mongo").strip().lower()
+        if _tqb not in ("mongo", "azure"):
+            raise ConfigurationError(
+                f"TRANSCRIPTION_QUEUE_BACKEND must be 'mongo' or 'azure'; got {_tqb!r}. "
+                "Use 'mongo' (default/FIFO Mongo collection) or 'azure' (after Sprint 2B Chunk 1)."
+            )
+        self.transcription_queue_backend: str = _tqb
+
+        _tsb = os.getenv("TRANSCRIPTION_STORAGE_BACKEND", "gridfs").strip().lower()
+        if _tsb not in ("gridfs", "azure_blob"):
+            raise ConfigurationError(
+                f"TRANSCRIPTION_STORAGE_BACKEND must be 'gridfs' or 'azure_blob'; got {_tsb!r}. "
+                "Use 'gridfs' (default/GridFS) or 'azure_blob' (after Sprint 2B Chunk 2)."
+            )
+        self.transcription_storage_backend: str = _tsb
 
 
 @lru_cache(maxsize=1)

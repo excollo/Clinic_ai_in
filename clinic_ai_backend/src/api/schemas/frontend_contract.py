@@ -57,7 +57,9 @@ class ConsentCaptureRequest(BaseModel):
     doctor_id: str
     language: str
     consent_text_version: str
-    patient_confirmed: bool
+    patient_confirmed: Optional[bool] = None
+    status: Optional[Literal["accepted", "declined"]] = None
+    decline_reason: Optional[str] = None
     timestamp: datetime
 
 
@@ -166,3 +168,10 @@ class MarkAllReadRequest(BaseModel):
 class PostVisitSummaryRequest(BaseModel):
     visit_id: str
     language: str = "en"
+
+
+class ConsentWithdrawRequest(BaseModel):
+    patient_id: str
+    original_consent_id: Optional[str] = None
+    withdrawal_reason: Optional[str] = None
+    initiated_by: Literal["patient", "doctor", "guardian"] = "patient"

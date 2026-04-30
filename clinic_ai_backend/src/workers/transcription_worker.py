@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -18,9 +19,9 @@ from urllib.request import Request, urlopen
 from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.db.mongo.repositories.visit_transcription_repository import VisitTranscriptionRepository
-from src.adapters.external.queue.consumer import TranscriptionQueueConsumer
-from src.adapters.external.queue.producer import TranscriptionQueueProducer
-from src.adapters.external.storage.object_storage import TranscriptionAudioStore
+from src.adapters.transcription.factory import get_audio_storage_adapter, get_queue_adapter
+from src.adapters.transcription.storage.gridfs_audio_adapter import GridFsAudioStorageAdapter
+from src.adapters.transcription.types import TranscriptionQueueJob
 from src.application.services.dialogue_pii import scrub_dialogue_turns
 from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
 from src.application.use_cases.generate_india_clinical_note import GenerateIndiaClinicalNoteUseCase
@@ -46,8 +47,6 @@ class TranscriptionWorker:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.repo = AudioRepository()
-        self.consumer = TranscriptionQueueConsumer()
-        self.producer = TranscriptionQueueProducer()
         self.db = get_database()
 
     def process_next(self) -> bool:
@@ -61,123 +60,123 @@ class TranscriptionWorker:
 
     async def process_next_async(self) -> bool:
         """Process one queued message (async-friendly for local demo mode)."""
+        queue_adapter = get_queue_adapter()
         stale_job_ids = self.repo.requeue_stale_processing_jobs(
             max_processing_sec=self.settings.transcription_timeout_sec
         )
         for stale_job_id in stale_job_ids:
-            self.producer.enqueue(stale_job_id)
+            await queue_adapter.enqueue(TranscriptionQueueJob(job_id=stale_job_id))
 
-        job_id = self.consumer.pop_next_job_id()
-        if not job_id:
+        dequeued = await queue_adapter.dequeue(visibility_timeout=600)
+        if not dequeued:
             return False
 
-        job = self.repo.get_job(job_id)
-        if not job:
-            self.consumer.ack_last()
-            return True
-
-        if not self._has_previsit(job):
-            self.repo.mark_failed(
-                job_id,
-                error_code="PREVISIT_MISSING",
-                error_message="Pre-visit summary not found at processing time",
-            )
-            self._sync_visit_failed(job, "Pre-visit summary not found at processing time")
-            self._purge_stored_audio(job)
-            self.consumer.ack_last()
-            return True
-
-        audio_doc = self.repo.get_audio_by_id(job["audio_id"])
-        if not audio_doc:
-            self.repo.mark_failed(
-                job_id,
-                error_code="AUDIO_MISSING",
-                error_message="Audio metadata not found for transcription job",
-            )
-            self._sync_visit_failed(job, "Audio metadata not found for transcription job")
-            self.consumer.ack_last()
-            return True
-
-        self.repo.mark_processing(job_id)
-        self._sync_visit_processing(job)
+        job_id = dequeued.job.job_id
         try:
-            speech_response = await asyncio.wait_for(
-                asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
-                timeout=max(
-                    float(self.settings.transcription_job_timeout_sec),
-                    float(self.settings.transcription_timeout_sec),
-                ),
-            )
-
-            normalized = self._normalize_segments(speech_response.get("segments", []))
-            if not normalized:
-                raise RuntimeError("No transcript segments returned by speech provider")
-
-            review_count = sum(1 for segment in normalized if segment["needs_manual_review"])
-            review_ratio = review_count / len(normalized)
-            full_text = " ".join(segment["text"] for segment in normalized if segment["text"]).strip()
-            avg_confidence = sum(segment["confidence"] for segment in normalized) / len(normalized)
-            if self.settings.use_local_adapters:
-                requires_manual_review = False
-            else:
-                requires_manual_review = (
-                    review_ratio >= self.settings.transcription_manual_review_ratio_threshold
-                )
-
-            structured = self._visit_structured_dialogue(job, full_text=full_text, normalized=normalized)
-            segments_to_store = align_segments_with_structured_dialogue(normalized, structured)
-            self.repo.save_result(
-                {
-                    "job_id": job["job_id"],
-                    "patient_id": job["patient_id"],
-                    "visit_id": job.get("visit_id"),
-                    "language_detected": speech_response.get("language_detected", "unknown"),
-                    "overall_confidence": round(avg_confidence, 4),
-                    "requires_manual_review": requires_manual_review,
-                    "full_transcript_text": full_text,
-                    "segments": segments_to_store,
-                }
-            )
-            self._sync_visit_completed(
-                job,
-                full_text=full_text,
-                normalized=segments_to_store,
-                structured_dialogue=structured,
-            )
-            self.repo.mark_completed(job_id)
-            self._auto_generate_default_note(job=job)
-            self._purge_stored_audio(job)
-        except Exception as exc:  # noqa: BLE001
-            if "NON_RETRIABLE_NO_TEXT" in str(exc):
-                err_msg = str(exc).replace("NON_RETRIABLE_NO_TEXT: ", "")
-                self.repo.mark_failed(
-                    job_id,
-                    error_code="TRANSCRIPTION_FAILED",
-                    error_message=err_msg,
-                )
-                self._sync_visit_failed(job, err_msg)
-                self._purge_stored_audio(job)
-                self.consumer.ack_last()
+            job = self.repo.get_job(job_id)
+            if not job:
                 return True
-            refreshed = self.repo.increment_retry(
-                job_id,
-                error_code="TRANSCRIPTION_FAILED_RETRY",
-                error_message=str(exc),
-            )
-            retry_count = refreshed["retry_count"] if refreshed else job.get("retry_count", 0) + 1
-            max_retries = refreshed["max_retries"] if refreshed else job.get("max_retries", 0)
-            if retry_count >= max_retries:
+
+            if not self._has_previsit(job):
                 self.repo.mark_failed(
                     job_id,
-                    error_code="TRANSCRIPTION_FAILED",
+                    error_code="PREVISIT_MISSING",
+                    error_message="Pre-visit summary not found at processing time",
+                )
+                self._sync_visit_failed(job, "Pre-visit summary not found at processing time")
+                await self._purge_stored_audio(job)
+                return True
+
+            audio_doc = self.repo.get_audio_by_id(job["audio_id"])
+            if not audio_doc:
+                self.repo.mark_failed(
+                    job_id,
+                    error_code="AUDIO_MISSING",
+                    error_message="Audio metadata not found for transcription job",
+                )
+                self._sync_visit_failed(job, "Audio metadata not found for transcription job")
+                return True
+
+            self.repo.mark_processing(job_id)
+            self._sync_visit_processing(job)
+            try:
+                speech_response = await asyncio.wait_for(
+                    asyncio.to_thread(self._call_azure_speech, job=job, audio_doc=audio_doc),
+                    timeout=max(
+                        float(self.settings.transcription_job_timeout_sec),
+                        float(self.settings.transcription_timeout_sec),
+                    ),
+                )
+
+                normalized = self._normalize_segments(speech_response.get("segments", []))
+                if not normalized:
+                    raise RuntimeError("No transcript segments returned by speech provider")
+
+                review_count = sum(1 for segment in normalized if segment["needs_manual_review"])
+                review_ratio = review_count / len(normalized)
+                full_text = " ".join(segment["text"] for segment in normalized if segment["text"]).strip()
+                avg_confidence = sum(segment["confidence"] for segment in normalized) / len(normalized)
+                if self.settings.use_local_adapters:
+                    requires_manual_review = False
+                else:
+                    requires_manual_review = (
+                        review_ratio >= self.settings.transcription_manual_review_ratio_threshold
+                    )
+
+                structured = self._visit_structured_dialogue(job, full_text=full_text, normalized=normalized)
+                segments_to_store = align_segments_with_structured_dialogue(normalized, structured)
+                self.repo.save_result(
+                    {
+                        "job_id": job["job_id"],
+                        "patient_id": job["patient_id"],
+                        "visit_id": job.get("visit_id"),
+                        "language_detected": speech_response.get("language_detected", "unknown"),
+                        "overall_confidence": round(avg_confidence, 4),
+                        "requires_manual_review": requires_manual_review,
+                        "full_transcript_text": full_text,
+                        "segments": segments_to_store,
+                    }
+                )
+                self._sync_visit_completed(
+                    job,
+                    full_text=full_text,
+                    normalized=segments_to_store,
+                    structured_dialogue=structured,
+                )
+                self.repo.mark_completed(job_id)
+                self._auto_generate_default_note(job=job)
+                await self._purge_stored_audio(job)
+            except Exception as exc:  # noqa: BLE001
+                if "NON_RETRIABLE_NO_TEXT" in str(exc):
+                    err_msg = str(exc).replace("NON_RETRIABLE_NO_TEXT: ", "")
+                    self.repo.mark_failed(
+                        job_id,
+                        error_code="TRANSCRIPTION_FAILED",
+                        error_message=err_msg,
+                    )
+                    self._sync_visit_failed(job, err_msg)
+                    await self._purge_stored_audio(job)
+                    return True
+                refreshed = self.repo.increment_retry(
+                    job_id,
+                    error_code="TRANSCRIPTION_FAILED_RETRY",
                     error_message=str(exc),
                 )
-                self._sync_visit_failed(job, str(exc))
-                self._purge_stored_audio(job)
-            else:
-                self.producer.enqueue(job_id)
+                retry_count = refreshed["retry_count"] if refreshed else job.get("retry_count", 0) + 1
+                max_retries = refreshed["max_retries"] if refreshed else job.get("max_retries", 0)
+                if retry_count >= max_retries:
+                    self.repo.mark_failed(
+                        job_id,
+                        error_code="TRANSCRIPTION_FAILED",
+                        error_message=str(exc),
+                    )
+                    self._sync_visit_failed(job, str(exc))
+                    await self._purge_stored_audio(job)
+                else:
+                    await queue_adapter.enqueue(TranscriptionQueueJob(job_id=job_id))
         finally:
-            self.consumer.ack_last()
+            await queue_adapter.acknowledge(dequeued.job.job_id, dequeued.receipt)
+
         return True
 
     def _auto_generate_default_note(self, *, job: dict) -> None:
@@ -308,14 +307,20 @@ class TranscriptionWorker:
             or ""
         ).strip()
 
-    def _purge_stored_audio(self, job: dict) -> None:
-        """Delete GridFS / temp file for this job's upload (best-effort)."""
+    async def _purge_stored_audio(self, job: dict) -> None:
+        """Delete stored upload bytes via configured storage backend (best-effort)."""
         doc = self.repo.get_audio_by_id(str(job.get("audio_id", "") or ""))
         if not doc:
             return
         ref = self._storage_ref_from_audio_doc(doc)
-        if ref:
-            TranscriptionAudioStore().delete_by_ref(ref)
+        if not ref:
+            return
+        adapter = get_audio_storage_adapter()
+        if isinstance(adapter, GridFsAudioStorageAdapter):
+            await asyncio.to_thread(adapter.delete_blocking, ref)
+            return None
+        await adapter.delete_blob(ref)
+        return None
 
     @staticmethod
     def _pcm_wav_duration_seconds(wav_bytes: bytes) -> float | None:
@@ -729,7 +734,14 @@ class TranscriptionWorker:
         storage_ref = self._storage_ref_from_audio_doc(audio_doc)
         if not storage_ref:
             raise RuntimeError("Audio storage reference not found")
-        audio_bytes = TranscriptionAudioStore().download_audio(storage_ref)
+        storage_adapter = get_audio_storage_adapter()
+        if isinstance(storage_adapter, GridFsAudioStorageAdapter):
+            audio_bytes = storage_adapter.download_blocking(storage_ref)
+        else:
+            raise RuntimeError(
+                "Azure Blob storage adapter downloads are async; Chunk 2 will wire asyncio batch STT orchestration "
+                "(current worker path assumes GridFsAudioStorageAdapter / gridfs backend)."
+            )
         declared_mime = self._normalize_audio_content_type(str(audio_doc.get("mime_type", "") or "audio/wav"))
         meta_size = audio_doc.get("size_bytes")
         wav_bytes, transcode_error = self._try_transcode_to_wav_pcm16k_mono(audio_bytes, declared_mime)
@@ -1211,7 +1223,23 @@ class TranscriptionWorker:
 
 async def _worker_loop(worker_id: int, stop_event: asyncio.Event, poll_interval_sec: float) -> None:
     worker = TranscriptionWorker()
+    heartbeat_interval = max(5, int(worker.settings.transcription_worker_heartbeat_interval_sec))
+    next_heartbeat = 0.0
     while not stop_event.is_set():
+        now = time.time()
+        if now >= next_heartbeat:
+            worker.db.worker_heartbeats.update_one(
+                {"worker_id": f"{worker.settings.transcription_worker_id}-{worker_id}"},
+                {
+                    "$set": {
+                        "worker_id": f"{worker.settings.transcription_worker_id}-{worker_id}",
+                        "last_heartbeat": time.time(),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+                upsert=True,
+            )
+            next_heartbeat = now + heartbeat_interval
         processed = await worker.process_next_async()
         if not processed:
             await asyncio.sleep(poll_interval_sec)

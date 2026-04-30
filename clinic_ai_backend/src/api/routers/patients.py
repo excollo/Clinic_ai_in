@@ -16,7 +16,7 @@ from src.api.schemas.patient import (
     PatientSummaryResponse,
 )
 
-router = APIRouter(prefix="/api/patients", tags=["Patients"])
+router = APIRouter(prefix="/internal/patients", tags=["Patients"])
 
 
 @router.get("", response_model=list[PatientSummaryResponse])
@@ -113,6 +113,9 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
         scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
     db = get_database()
     existing_patient = db.patients.find_one({"patient_id": internal_patient_id}) is not None
+    existing_doc = db.patients.find_one({"patient_id": internal_patient_id}, {"consent_status": 1, "_id": 0}) or {}
+    if str(existing_doc.get("consent_status") or "") == "withdrawn":
+        raise HTTPException(status_code=403, detail="consent withdrawn; re-consent required before starting a new visit")
     db.patients.update_one(
         {"patient_id": internal_patient_id},
         {
@@ -182,6 +185,8 @@ def create_visit_from_existing_patient(
     patient = db.patients.find_one({"patient_id": internal_patient_id})
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+    if str(patient.get("consent_status") or "") == "withdrawn":
+        raise HTTPException(status_code=403, detail="consent withdrawn; re-consent required before starting a new visit")
 
     visit_id = VisitId.validate(VisitId.generate())
     now = datetime.now(timezone.utc)

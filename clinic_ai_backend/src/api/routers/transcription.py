@@ -5,17 +5,18 @@ import asyncio
 import logging
 import hashlib
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import unquote
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from src.adapters.db.mongo.client import get_database
 from src.adapters.db.mongo.repositories.audio_repository import AudioRepository
 from src.adapters.db.mongo.repositories.visit_transcription_repository import VisitTranscriptionRepository
-from src.adapters.external.queue.producer import TranscriptionQueueProducer
-from src.adapters.external.storage.object_storage import TranscriptionAudioStore
+from src.adapters.transcription.factory import get_audio_storage_adapter, get_queue_adapter
+from src.adapters.transcription.types import TranscriptionQueueJob
 from src.api.schemas.audio import (
     SpeakerMode,
     TranscriptionUploadAcceptedResponse,
@@ -23,11 +24,28 @@ from src.api.schemas.audio import (
 from src.api.schemas.transcription_session import TranscriptionSessionResponse
 from src.application.services.dialogue_pii import scrub_dialogue_turns
 from src.application.services.structure_dialogue import structure_dialogue_from_transcript_sync
+from src.application.utils.transcript_dialogue import audio_duration_from_segments_ms
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/api/notes", tags=["Transcription"])
 _upload_log = logging.getLogger(__name__)
+
+
+def _set_audit_state(
+    request: Request,
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    status: str = "success",
+    context: dict | None = None,
+) -> None:
+    request.state.audit_action = action
+    request.state.audit_resource_type = resource_type
+    request.state.audit_resource_id = resource_id
+    request.state.audit_status = status
+    request.state.audit_context = context or {}
 
 
 def _as_utc_aware(value: datetime) -> datetime:
@@ -45,6 +63,7 @@ def _iso_utc(value: datetime | None) -> str | None:
 
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
 async def upload_transcription_audio(
+    request: Request,
     patient_id: str = Form(...),
     visit_id: str = Form(...),
     audio_file: UploadFile = File(...),
@@ -88,11 +107,16 @@ async def upload_transcription_audio(
     now = datetime.now(timezone.utc)
     audio_id = str(uuid4())
     job_id = str(uuid4())
-    logical_name = f"{internal_patient_id}/{visit_id}/{audio_id}_{audio_file.filename}"
-    storage_ref = TranscriptionAudioStore().upload_audio(
-        blob_path=logical_name,
-        audio_bytes=payload,
-        mime_type=content_type or "application/octet-stream",
+    safe_name = Path(audio_file.filename or "recording").name or "recording"
+    storage_adapter = await get_audio_storage_adapter()
+    storage_ref = await storage_adapter.upload(
+        payload,
+        safe_name,
+        {
+            "patient_id": internal_patient_id,
+            "visit_id": visit_id,
+            "mime_type": content_type or "application/octet-stream",
+        },
     )
 
     effective_language = _normalize_language_mix(language_mix)
@@ -124,7 +148,22 @@ async def upload_transcription_audio(
         speaker_mode=speaker_mode,
         max_retries=settings.transcription_max_retries,
     )
-    TranscriptionQueueProducer().enqueue(job_id)
+    await get_queue_adapter().enqueue(
+        TranscriptionQueueJob(
+            job_id=job_id,
+            audio_storage_ref=storage_ref,
+            patient_id=internal_patient_id,
+            visit_id=visit_id,
+            queued_at=now,
+        )
+    )
+    _set_audit_state(
+        request,
+        action="transcription_upload_queued",
+        resource_type="transcription_job",
+        resource_id=job_id,
+        context={"patient_id": internal_patient_id, "visit_id": visit_id},
+    )
 
     VisitTranscriptionRepository().upsert_queued(
         patient_id=internal_patient_id,
@@ -143,7 +182,7 @@ async def upload_transcription_audio(
     )
     if settings.transcription_debug_bytes:
         try:
-            roundtrip = len(TranscriptionAudioStore().download_audio(storage_ref))
+            roundtrip = len(await storage_adapter.download(storage_ref))
             if roundtrip != len(payload):
                 _upload_log.error(
                     "transcription_upload_storage_mismatch audio_id=%s multipart_bytes=%s stored_read_bytes=%s",
@@ -178,7 +217,7 @@ async def upload_transcription_audio(
 
 
 @router.get("/transcribe/status/{patient_id}/{visit_id}")
-def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
+def get_visit_transcription_status(patient_id: str, visit_id: str, request: Request) -> dict:
     """Poll visit-scoped transcription status (transcript-bundle compatible fields)."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
@@ -209,6 +248,13 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
             transcription_status = "stale_processing"
 
     repo.touch_poll(patient_id=internal_pid, visit_id=internal_vid, last_poll_status=transcription_status)
+    _set_audit_state(
+        request,
+        action="transcription_status_checked",
+        resource_type="visit_transcription_session",
+        resource_id=f"{internal_pid}:{internal_vid}",
+        context={"status": transcription_status},
+    )
 
     status_info: dict = {
         "status": transcription_status,
@@ -251,7 +297,9 @@ def get_visit_transcription_status(patient_id: str, visit_id: str) -> dict:
 
 
 @router.get("/{patient_id}/visits/{visit_id}/dialogue", response_model=None)
-async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Response | TranscriptionSessionResponse:
+async def get_visit_transcription_dialogue(
+    patient_id: str, visit_id: str, request: Request
+) -> Response | TranscriptionSessionResponse:
     """Return transcript + optional structured dialogue; 202 with Retry-After while processing."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
@@ -272,6 +320,12 @@ async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Re
         return Response(status_code=202, headers={"Retry-After": "60"})
 
     structured = session.get("structured_dialogue")
+    _set_audit_state(
+        request,
+        action="transcription_dialogue_retrieved",
+        resource_type="visit_transcription_session",
+        resource_id=f"{internal_pid}:{internal_vid}",
+    )
     return TranscriptionSessionResponse(
         audio_file_path=session.get("audio_file_path"),
         transcript=transcript,
@@ -286,7 +340,7 @@ async def get_visit_transcription_dialogue(patient_id: str, visit_id: str) -> Re
 
 
 @router.post("/{patient_id}/visits/{visit_id}/dialogue/structure")
-async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONResponse:
+async def structure_visit_dialogue(patient_id: str, visit_id: str, request: Request) -> JSONResponse:
     """Structure stored transcript into Doctor/Patient JSON and scrub PII; persists on the visit session."""
     internal_pid = resolve_internal_patient_id(unquote(patient_id), allow_raw_fallback=True)
     internal_vid = unquote(visit_id)
@@ -312,7 +366,92 @@ async def structure_visit_dialogue(patient_id: str, visit_id: str) -> JSONRespon
 
     scrubbed = scrub_dialogue_turns(dialogue)
     vrepo.save_structured_dialogue(patient_id=internal_pid, visit_id=internal_vid, dialogue=scrubbed)
+    _set_audit_state(
+        request,
+        action="transcription_dialogue_structured",
+        resource_type="visit_transcription_session",
+        resource_id=f"{internal_pid}:{internal_vid}",
+    )
     return JSONResponse(status_code=200, content={"dialogue": scrubbed, "message": "Success"})
+
+
+def _progress_from_status(status: str) -> int:
+    normalized = (status or "").lower()
+    if normalized == "queued":
+        return 10
+    if normalized == "processing":
+        return 60
+    if normalized == "completed":
+        return 100
+    if normalized == "failed":
+        return 100
+    return 0
+
+
+@router.get("/transcribe/{job_id}/status")
+def get_transcription_job_status(job_id: str, request: Request) -> dict:
+    repo = AudioRepository()
+    job = repo.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    status = str(job.get("status") or "queued")
+    _set_audit_state(
+        request,
+        action="transcription_status_checked",
+        resource_type="transcription_job",
+        resource_id=job_id,
+        context={"status": status},
+    )
+    return {
+        "job_id": job_id,
+        "status": status,
+        "progress_percent": _progress_from_status(status),
+        "estimated_completion_at": None,
+        "queued_at": _iso_utc(job.get("created_at")),
+        "started_at": _iso_utc(job.get("started_at")),
+        "completed_at": _iso_utc(job.get("completed_at")),
+        "error": job.get("error_message") if status == "failed" else None,
+        "azure_batch_job_id": job.get("azure_batch_job_id"),
+    }
+
+
+@router.get("/transcribe/{job_id}/result")
+def get_transcription_job_result(job_id: str, request: Request) -> dict:
+    repo = AudioRepository()
+    job = repo.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    status = str(job.get("status") or "queued").lower()
+    if status != "completed":
+        raise HTTPException(status_code=409, detail=f"Job not completed. Status: {status}")
+    result = repo.get_result(job_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found")
+    segments = result.get("segments") or []
+    unique_speakers = len(
+        {
+            str(item.get("speaker_label", "")).strip()
+            for item in segments
+            if str(item.get("speaker_label", "")).strip()
+        }
+    )
+    _set_audit_state(
+        request,
+        action="transcription_result_retrieved",
+        resource_type="transcription_job",
+        resource_id=job_id,
+    )
+    return {
+        "job_id": job_id,
+        "transcript": segments,
+        "average_confidence": result.get("overall_confidence"),
+        "duration_seconds": audio_duration_from_segments_ms(segments),
+        "language_detected": result.get("language_detected"),
+        "speakers_identified": unique_speakers,
+        "noise_environment": job.get("noise_environment"),
+        "language_mix": job.get("language_mix"),
+        "azure_processing_time_seconds": None,
+    }
 
 
 def _normalize_language_mix(value: str) -> str:

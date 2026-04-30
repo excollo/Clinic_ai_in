@@ -8,7 +8,8 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 import httpx
 from pymongo import ReturnDocument
 
@@ -20,6 +21,7 @@ from src.api.schemas.frontend_contract import (
     AbhaLookupRequest,
     AbhaScanShareRequest,
     ConsentCaptureRequest,
+    ConsentWithdrawRequest,
     ForgotPasswordRequest,
     IndiaClinicalNoteRequest,
     LabResultRequest,
@@ -92,6 +94,28 @@ FIXED_FIELDS: list[dict[str, Any]] = [
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _set_audit_state(
+    request: Request,
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    status: str = "success",
+    patient_id: str | None = None,
+    visit_id: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> None:
+    request.state.audit_action = action
+    request.state.audit_resource_type = resource_type
+    request.state.audit_resource_id = resource_id
+    request.state.audit_status = status
+    if patient_id:
+        request.state.audit_patient_id = patient_id
+    if visit_id:
+        request.state.audit_visit_id = visit_id
+    request.state.audit_context = context or {}
 
 
 def _error(status_code: int, detail: str) -> HTTPException:
@@ -226,23 +250,27 @@ def _enforce_chest_pain_minimum_fields(
 
 
 @router.post("/auth/login")
-def auth_login(body: LoginRequest) -> dict[str, Any]:
+def auth_login(body: LoginRequest, request: Request) -> dict[str, Any]:
     mobile = body.mobile.strip()
     if _is_login_locked(mobile):
+        _set_audit_state(request, action="failed_login_attempt", resource_type="session", resource_id="credential_check", status="failure")
         raise _error(429, "Too many failed attempts. Try again in 15 minutes.")
     db = get_database()
     doc = db.doctors.find_one({"mobile": mobile}) or db.users.find_one({"phone": mobile}) or db.users.find_one({"mobile": mobile})
     if not doc:
         _record_login_failure(mobile)
+        _set_audit_state(request, action="failed_login_attempt", resource_type="session", resource_id="credential_check", status="failure")
         raise _error(401, "Invalid credentials")
     password_hash = str(doc.get("password_hash") or doc.get("hashed_password") or "")
     if not password_hash or not verify_password(body.password, password_hash):
         _record_login_failure(mobile)
+        _set_audit_state(request, action="failed_login_attempt", resource_type="session", resource_id="credential_check", status="failure")
         raise _error(401, "Invalid credentials")
     _clear_login_failures(mobile)
     doctor_id = str(doc.get("doctor_id") or doc.get("id") or f"doctor_{mobile[-6:]}")
     doctor_name = str(doc.get("name") or doc.get("full_name") or doc.get("doctor_name") or "doctor")
     token = _create_contract_jwt(doctor_id=doctor_id, mobile=mobile)
+    _set_audit_state(request, action="login", resource_type="session", resource_id=doctor_id)
     return {"token": token, "doctor_id": doctor_id, "doctor_name": doctor_name}
 
 
@@ -355,7 +383,7 @@ def auth_verify_otp(body: VerifyOtpRequest) -> dict[str, Any]:
 
 
 @router.post("/auth/forgot-password")
-def auth_forgot_password(body: ForgotPasswordRequest) -> dict[str, Any]:
+def auth_forgot_password(body: ForgotPasswordRequest, request: Request) -> dict[str, Any]:
     db = get_database()
     req = db.otp_requests.find_one({"request_id": body.request_id, "mobile": body.mobile})
     if not req:
@@ -371,28 +399,38 @@ def auth_forgot_password(body: ForgotPasswordRequest) -> dict[str, Any]:
         db.otp_requests.update_one({"request_id": body.request_id}, {"$set": {"attempts": attempts + 1}})
         raise _error(401, "invalid otp")
     db.otp_requests.update_one({"request_id": body.request_id}, {"$set": {"used": True, "verified_at": datetime.now(timezone.utc)}})
+    _set_audit_state(request, action="password_reset_requested", resource_type="session", resource_id="password_reset")
     updated = db.doctors.update_one(
         {"mobile": body.mobile},
         {"$set": {"password_hash": hash_password(body.new_password), "updated_at": datetime.now(timezone.utc)}},
     )
     if int(getattr(updated, "matched_count", 0)) == 0:
         raise _error(404, "doctor not found")
+    doctor = db.doctors.find_one({"mobile": body.mobile}) or {}
+    if doctor.get("doctor_id"):
+        _set_audit_state(request, action="password_reset_completed", resource_type="session", resource_id=str(doctor.get("doctor_id")))
     return {"success": True}
 
 
 @router.post("/consent/capture")
 def consent_capture(
     body: ConsentCaptureRequest,
+    request: Request,
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
     if not x_idempotency_key:
+        _set_audit_state(request, action="consent_captured", resource_type="consent", resource_id="missing-idempotency", status="failure")
         raise _error(422, "X-Idempotency-Key header is required")
     db = get_database()
     existing = db.consents.find_one({"idempotency_key": x_idempotency_key})
     if existing:
         return {"consent_id": str(existing["consent_id"]), "recorded_at": str(existing["recorded_at"])}
+    status = body.status or ("accepted" if bool(body.patient_confirmed) else "declined")
+    if status == "declined" and not body.decline_reason:
+        _set_audit_state(request, action="consent_declined", resource_type="consent", resource_id="validation-error", status="failure", patient_id=body.patient_id, visit_id=body.visit_id)
+        raise _error(422, "decline_reason is required when status is declined")
     consent_id = f"consent_{uuid4().hex[:16]}"
     recorded_at = _now_iso()
     db.consents.insert_one(
@@ -404,16 +442,131 @@ def consent_capture(
             "doctor_id": doctor_id,
             "language": body.language,
             "consent_text_version": body.consent_text_version,
-            "patient_confirmed": body.patient_confirmed,
+            "patient_confirmed": status == "accepted",
+            "status": status,
+            "decline_reason": body.decline_reason,
             "timestamp": body.timestamp,
             "recorded_at": recorded_at,
         }
     )
-    db.visits.update_one(
-        {"visit_id": body.visit_id},
-        {"$set": {"consent_captured": True, "consent_id": consent_id, "updated_at": datetime.now(timezone.utc)}},
+    if status == "accepted":
+        db.visits.update_one(
+            {"visit_id": body.visit_id},
+            {"$set": {"consent_captured": True, "consent_id": consent_id, "updated_at": datetime.now(timezone.utc)}},
+        )
+        db.patients.update_one({"patient_id": body.patient_id}, {"$set": {"consent_status": "accepted", "updated_at": datetime.now(timezone.utc)}})
+        _set_audit_state(
+            request,
+            action="consent_captured",
+            resource_type="consent",
+            resource_id=consent_id,
+            patient_id=body.patient_id,
+            visit_id=body.visit_id,
+            context={"status": "accepted"},
+        )
+    else:
+        db.visits.update_one(
+            {"visit_id": body.visit_id},
+            {"$set": {"consent_captured": False, "consent_status": "declined", "updated_at": datetime.now(timezone.utc)}},
+        )
+        db.patients.update_one({"patient_id": body.patient_id}, {"$set": {"consent_status": "declined", "updated_at": datetime.now(timezone.utc)}})
+        _set_audit_state(
+            request,
+            action="consent_declined",
+            resource_type="consent",
+            resource_id=consent_id,
+            patient_id=body.patient_id,
+            visit_id=body.visit_id,
+            context={"status": "declined"},
+        )
+    return {"consent_id": consent_id, "recorded_at": recorded_at, "status": status}
+
+
+@router.post("/consent/withdraw")
+def consent_withdraw(
+    body: ConsentWithdrawRequest,
+    request: Request,
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    doctor_id = auth["doctor_id"]
+    db = get_database()
+    latest = db.consents.find_one(
+        {"patient_id": body.patient_id, "status": {"$in": ["accepted", "declined"]}},
+        sort=[("recorded_at", -1)],
     )
-    return {"consent_id": consent_id, "recorded_at": recorded_at}
+    if not latest:
+        _set_audit_state(request, action="consent_withdrawn", resource_type="consent", resource_id=body.patient_id, status="failure", patient_id=body.patient_id)
+        raise _error(404, "no consent history found for patient")
+    original_consent_id = body.original_consent_id or str(latest.get("consent_id") or "")
+    withdrawal_id = f"withdrawal_{uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    db.consent_withdrawals.insert_one(
+        {
+            "withdrawal_id": withdrawal_id,
+            "patient_id": body.patient_id,
+            "doctor_id": doctor_id,
+            "original_consent_id": original_consent_id,
+            "withdrawal_reason": body.withdrawal_reason,
+            "initiated_by": body.initiated_by,
+            "timestamp": now,
+        }
+    )
+    db.patients.update_one(
+        {"patient_id": body.patient_id},
+        {"$set": {"consent_status": "withdrawn", "consent_withdrawn_at": now, "updated_at": now}},
+    )
+    _set_audit_state(
+        request,
+        action="consent_withdrawn",
+        resource_type="consent",
+        resource_id=withdrawal_id,
+        patient_id=body.patient_id,
+        context={"initiated_by": body.initiated_by},
+    )
+    return {
+        "withdrawal_id": withdrawal_id,
+        "patient_id": body.patient_id,
+        "status": "withdrawn",
+        "timestamp": now.isoformat(),
+    }
+
+
+@router.get("/consent/{patient_id}/history")
+def consent_history(
+    patient_id: str,
+    request: Request,
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> list[dict[str, Any]]:
+    _set_audit_state(request, action="consent_history_viewed", resource_type="consent", resource_id=patient_id, patient_id=patient_id)
+    _ = auth
+    db = get_database()
+    records = list(db.consents.find({"patient_id": patient_id}, {"_id": 0}))
+    withdrawals = list(db.consent_withdrawals.find({"patient_id": patient_id}, {"_id": 0}))
+    events: list[dict[str, Any]] = []
+    for item in records:
+        events.append(
+            {
+                "consent_id": item.get("consent_id"),
+                "status": item.get("status") or ("accepted" if item.get("patient_confirmed") else "declined"),
+                "language": item.get("language"),
+                "version": item.get("consent_text_version"),
+                "timestamp": item.get("timestamp"),
+                "captured_by": item.get("doctor_id"),
+                "decline_reason": item.get("decline_reason"),
+            }
+        )
+    for item in withdrawals:
+        events.append(
+            {
+                "consent_id": item.get("original_consent_id"),
+                "status": "withdrawn",
+                "withdrawal_reason": item.get("withdrawal_reason"),
+                "timestamp": item.get("timestamp"),
+                "initiated_by": item.get("initiated_by"),
+            }
+        )
+    events.sort(key=lambda e: str(e.get("timestamp") or ""), reverse=True)
+    return events
 
 
 @router.get("/consent/text")
@@ -430,11 +583,21 @@ def consent_text(language: str = "en", version: str = "latest") -> dict[str, Any
 @router.post("/patients/register")
 def patients_register(
     body: RegisterPatientRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
     db = get_database()
     existing_patient = db.patients.find_one({"doctor_id": doctor_id, "mobile": body.mobile})
+    if existing_patient and str(existing_patient.get("consent_status") or "") == "withdrawn":
+        _set_audit_state(
+            request,
+            action="register_blocked_consent_withdrawn",
+            resource_type="patient",
+            resource_id=str(existing_patient.get("patient_id") or body.mobile),
+            status="failure",
+        )
+        raise _error(403, "consent withdrawn; re-consent required before starting a new visit")
     patient_id = str(existing_patient.get("patient_id")) if existing_patient else f"pat_{uuid4().hex[:10]}"
     visit_id = f"vis_{uuid4().hex[:10]}"
     token_number = None
@@ -487,17 +650,77 @@ def patients_register(
             "updated_at": now,
         }
     )
+    _set_audit_state(
+        request,
+        action="patient_registered",
+        resource_type="patient",
+        resource_id=patient_id,
+        patient_id=patient_id,
+        visit_id=visit_id,
+        context={"workflow_type": body.workflow_type, "language": body.language},
+    )
     return {"patient_id": patient_id, "visit_id": visit_id, "token_number": token_number, "consent_required": True}
+
+
+@router.get("/patients")
+def patients_list(
+    request: Request,
+    limit: int = 20,
+    offset: int = 0,
+    search: str = "",
+    filter: str = "all",
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    doctor_id = auth["doctor_id"]
+    db = get_database()
+    rows = list(db.patients.find({"doctor_id": doctor_id}, {"_id": 0}))
+    if search.strip():
+        q = search.strip().lower()
+        rows = [r for r in rows if q in str(r.get("name", "")).lower() or q in str(r.get("mobile", ""))]
+    mapped = [
+        {
+            "patient_id": str(r.get("patient_id") or ""),
+            "name": str(r.get("name") or ""),
+            "age": int(r.get("age") or 0),
+            "sex": str(r.get("sex") or "other").lower(),
+            "mobile": str(r.get("mobile") or ""),
+            "language": str(r.get("language") or "english"),
+            "abha_id": r.get("abha_id"),
+            "visit_count": int(r.get("visit_count") or 0),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+            "chronic_conditions": r.get("chronic_conditions") or [],
+        }
+        for r in rows
+    ]
+    if filter == "abha":
+        mapped = [r for r in mapped if r.get("abha_id")]
+    total = len(mapped)
+    sliced = mapped[offset : offset + limit]
+    _set_audit_state(request, action="patients_listed", resource_type="patient", resource_id=doctor_id, context={"filter": filter})
+    return {"patients": sliced, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("/patients/abha/lookup")
 def patients_abha_lookup(
     body: AbhaLookupRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
+    _set_audit_state(request, action="abha_lookup_attempted", resource_type="patient", resource_id="abha_lookup")
     _ = auth
-    abha_id = body.abha_id.strip()
-    return {"name": f"abha patient {abha_id[-4:]}", "dob": "1990-01-01", "sex": "female", "mobile": "9876543210", "address": "india", "abha_id": abha_id}
+    _ = body
+    settings = get_settings()
+    if not settings.abdm_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "abdm_not_configured",
+                "message": "ABDM integration is not configured for this clinic. Manual registration is available.",
+                "fallback": "manual_registration",
+            },
+        )
+    raise HTTPException(status_code=501, detail="ABDM integration pending")
 
 
 @router.post("/patients/abha/link")
@@ -506,9 +729,18 @@ def patients_abha_link(
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     _ = auth
-    db = get_database()
-    db.patients.update_one({"patient_id": body.patient_id}, {"$set": {"abha_id": body.abha_id}})
-    return {"success": True}
+    _ = body
+    settings = get_settings()
+    if not settings.abdm_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "abdm_not_configured",
+                "message": "ABDM integration is not configured for this clinic. Manual registration is available.",
+                "fallback": "manual_registration",
+            },
+        )
+    raise HTTPException(status_code=501, detail="ABDM integration pending")
 
 
 @router.post("/patients/register/scan-share")
@@ -517,8 +749,18 @@ def patients_register_scan_share(
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     _ = auth
-    qr_data = body.abha_qr_data.strip()
-    return {"name": "abha patient", "dob": "1990-01-01", "sex": "male", "mobile": "9876543210", "address": "india", "abha_id": qr_data[-14:]}
+    _ = body
+    settings = get_settings()
+    if not settings.abdm_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "abdm_not_configured",
+                "message": "ABDM integration is not configured for this clinic. Manual registration is available.",
+                "fallback": "manual_registration",
+            },
+        )
+    raise HTTPException(status_code=501, detail="ABDM integration pending")
 
 
 @router.get("/patients/{patient_id}/visits/{visit_id}/vitals/required-fields")
@@ -558,6 +800,7 @@ def vitals_required_fields(
 
 @router.post("/patients/{patient_id}/visits/{visit_id}/vitals")
 def vitals_save(
+    request: Request,
     patient_id: str,
     visit_id: str,
     body: VitalsRequest,
@@ -587,12 +830,14 @@ def vitals_save(
         {"visit_id": visit_id, "patient_id": patient_id},
         {"$set": {"vitals_id": vitals_id, "vitals_recorded": True, "updated_at": datetime.now(timezone.utc)}},
     )
+    _set_audit_state(request, action="vitals_captured", resource_type="visit", resource_id=visit_id, patient_id=patient_id, visit_id=visit_id)
     return {"vitals_id": vitals_id, "recorded_at": recorded_at}
 
 
 @router.post("/notes/india-clinical-note")
 def notes_india_clinical(
     body: IndiaClinicalNoteRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
@@ -624,6 +869,7 @@ def notes_india_clinical(
             },
             upsert=True,
         )
+        _set_audit_state(request, action="note_drafted", resource_type="visit", resource_id=body.visit_id, patient_id=body.patient_id, visit_id=body.visit_id)
         return {"note_id": note_id, "status": "draft", "created_at": created_at}
 
     if existing and str(existing.get("status")) == "approved":
@@ -640,6 +886,7 @@ def notes_india_clinical(
         {"visit_id": body.visit_id, "patient_id": body.patient_id},
         {"$set": {"note_approved": True, "note_id": note_id, "updated_at": now}},
     )
+    _set_audit_state(request, action="note_approved", resource_type="visit", resource_id=body.visit_id, patient_id=body.patient_id, visit_id=body.visit_id)
     return {"note_id": note_id, "status": "approved", "created_at": created_at}
 
 
@@ -660,6 +907,7 @@ def notes_india_get(
 @router.post("/patients/summary/postvisit")
 def postvisit_summary(
     body: PostVisitSummaryRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
@@ -699,6 +947,7 @@ def postvisit_summary(
         "warning_signs": note.get("red_flags") or [],
         "footer": f"— Dr. {doctor.get('name', 'Doctor')}, {(doctor.get('clinic') or {}).get('name', 'Clinic')}",
     }
+    _set_audit_state(request, action="postvisit_summary_generated", resource_type="visit", resource_id=body.visit_id, visit_id=body.visit_id)
     return {"visit_id": body.visit_id, "whatsapp_payload": whatsapp_payload}
 
 
@@ -749,6 +998,7 @@ def lab_results_create(
     patient_id: str,
     visit_id: str,
     body: LabResultRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     _ = auth
@@ -763,6 +1013,7 @@ def lab_results_create(
             "processing_status": "pending",
         }
     )
+    _set_audit_state(request, action="lab_uploaded", resource_type="lab", resource_id=lab_id, patient_id=patient_id, visit_id=visit_id)
     return {"lab_id": lab_id, "processing_status": "pending"}
 
 
@@ -770,6 +1021,7 @@ def lab_results_create(
 def lab_results_list(
     patient_id: str,
     visit_id: str,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     _ = auth
@@ -787,6 +1039,7 @@ def lab_results_list(
         }
         for r in rows
     ]
+    _set_audit_state(request, action="lab_viewed", resource_type="lab", resource_id=visit_id, patient_id=patient_id, visit_id=visit_id)
     return {"results": mapped}
 
 
@@ -896,6 +1149,7 @@ def doctor_queue(
 @router.post("/whatsapp/send")
 def whatsapp_send(
     body: WhatsAppSendRequest,
+    request: Request,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
@@ -957,6 +1211,7 @@ def whatsapp_send(
             "sent_at": datetime.now(timezone.utc),
         }
     )
+    _set_audit_state(request, action="whatsapp_sent" if status == "queued" else "whatsapp_failed", resource_type="visit", resource_id=body.visit_id, patient_id=body.patient_id, visit_id=body.visit_id)
     return {"message_id": message_id, "status": status}
 
 
@@ -991,3 +1246,88 @@ def notifications_mark_all_read(
     result = db.notifications.update_many({"doctor_id": doctor_id, "read": False}, {"$set": {"read": True}})
     updated = int(getattr(result, "modified_count", 0))
     return {"updated": updated}
+
+
+@router.get("/audit-log")
+def audit_log_list(
+    doctor_id: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    action: str | None = None,
+    patient_id: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    _ = auth
+    db = get_database()
+    query: dict[str, Any] = {"doctor_id": doctor_id}
+    if action:
+        query["action"] = action
+    if patient_id:
+        query["patient_id"] = patient_id
+    if start_date or end_date:
+        t_query: dict[str, Any] = {}
+        if start_date:
+            t_query["$gte"] = datetime.fromisoformat(start_date)
+        if end_date:
+            t_query["$lte"] = datetime.fromisoformat(end_date)
+        query["timestamp"] = t_query
+    total = db.audit_log.count_documents(query)
+    rows = list(db.audit_log.find(query, {"_id": 0}).sort("timestamp", -1).skip(offset).limit(limit))
+    return {"entries": rows, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/audit-log/stats")
+def audit_log_stats(
+    doctor_id: str,
+    period: str = "last_30_days",
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    _ = auth
+    db = get_database()
+    start = datetime.now(timezone.utc) - timedelta(days=30)
+    if period == "last_7_days":
+        start = datetime.now(timezone.utc) - timedelta(days=7)
+    cursor = db.audit_log.aggregate(
+        [
+            {"$match": {"doctor_id": doctor_id, "timestamp": {"$gte": start}}},
+            {"$group": {"_id": "$action", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+        ]
+    )
+    return {"period": period, "counts": [{"action": item["_id"], "count": item["count"]} for item in cursor]}
+
+
+@router.get("/audit-log/export")
+def audit_log_export(
+    doctor_id: str,
+    format: str = "csv",
+    auth: dict[str, str] = Depends(require_contract_auth),
+):
+    _ = auth
+    if format.lower() != "csv":
+        raise _error(400, "only csv export is supported")
+    db = get_database()
+    rows = list(db.audit_log.find({"doctor_id": doctor_id}, {"_id": 0}).sort("timestamp", -1))
+    header = "entry_id,doctor_id,patient_id,visit_id,action,resource_type,resource_id,ip_address,user_agent,timestamp\n"
+    lines = [header]
+    for row in rows:
+        lines.append(
+            ",".join(
+                [
+                    str(row.get("entry_id", "")),
+                    str(row.get("doctor_id", "")),
+                    str(row.get("patient_id", "")),
+                    str(row.get("visit_id", "")),
+                    str(row.get("action", "")),
+                    str(row.get("resource_type", "")),
+                    str(row.get("resource_id", "")),
+                    str(row.get("ip_address", "")),
+                    str(row.get("user_agent", "")).replace(",", " "),
+                    str(row.get("timestamp", "")),
+                ]
+            )
+            + "\n"
+        )
+    return PlainTextResponse("".join(lines), media_type="text/csv")

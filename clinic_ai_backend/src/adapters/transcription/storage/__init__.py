@@ -1,0 +1,1 @@
+"""Audio storage adapter package."""
