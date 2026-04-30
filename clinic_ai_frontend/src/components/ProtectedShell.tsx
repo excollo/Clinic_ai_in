@@ -15,8 +15,12 @@ function useBackendHealth() {
   return useQuery({
     queryKey: ["health"],
     queryFn: async () => {
-      await apiClient.get("/health");
-      return true;
+      const response = await apiClient.get("/health");
+      return {
+        backendReachable: true,
+        mongodb: String(response.data?.mongodb || "disconnected"),
+        azureSpeech: String(response.data?.azure_speech || "unknown"),
+      };
     },
     refetchInterval: 30_000,
     retry: 0,
@@ -78,9 +82,18 @@ export function ProtectedShell() {
     return () => window.removeEventListener("offline-sync-updated", handler);
   }, [queryClient]);
 
+  const healthState = health.isError || !health.data
+    ? { tone: "red", label: t("topbar.backendUnreachable") }
+    : health.data.azureSpeech !== "reachable"
+      ? { tone: "amber", label: "Transcription service unavailable" }
+    : health.data.mongodb !== "connected"
+      ? { tone: "amber", label: "Database issue - patient data unavailable" }
+      : { tone: "green", label: t("topbar.backendConnected") };
+
   useEffect(() => {
-    if (health.isError) toast.warning(t("topbar.backendUnreachable"));
-  }, [health.isError, t]);
+    if (healthState.tone === "red") toast.warning(t("topbar.backendUnreachable"));
+    if (healthState.tone === "amber") toast.warning(healthState.label);
+  }, [healthState.label, healthState.tone, t]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -138,7 +151,7 @@ export function ProtectedShell() {
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-h2">{t("common.dashboard")}</h1>
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-clinic-border bg-white px-2 py-1 text-xs"><span className={`h-2 w-2 rounded-full ${health.isError ? "bg-red-500" : "bg-green-500"}`} />{health.isError ? t("topbar.backendUnreachable") : t("topbar.backendConnected")}</span>
+            <span className="inline-flex items-center gap-2 rounded-lg border border-clinic-border bg-white px-2 py-1 text-xs"><span className={`h-2 w-2 rounded-full ${healthState.tone === "red" ? "bg-red-500" : healthState.tone === "amber" ? "bg-amber-500" : "bg-green-500"}`} />{healthState.label}</span>
             {(unsynced.data ?? 0) > 0 && <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs text-amber-700">{t("topbar.unsyncedCount", { count: unsynced.data })}</span>}
             <button className="rounded-lg border border-clinic-border bg-white px-3 py-2 text-sm">{t("topbar.languageToggle")}</button>
             <button onClick={() => navigate("/notifications")} aria-label={t("common.notifications")} className="rounded-lg border border-clinic-border bg-white p-2"><Bell className="h-4 w-4" /></button>

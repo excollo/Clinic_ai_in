@@ -7,6 +7,7 @@ import { ProtectedShell } from "@/components/ProtectedShell";
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const PatientsPage = lazy(() => import("@/pages/PatientsPage"));
 const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
+const PatientDeclinedConsentPage = lazy(() => import("@/pages/PatientDeclinedConsentPage"));
 const WalkInConfirmationPage = lazy(() => import("@/pages/WalkInConfirmationPage"));
 const ScheduleConfirmationPage = lazy(() => import("@/pages/ScheduleConfirmationPage"));
 const PatientDetailPage = lazy(() => import("@/pages/PatientDetailPage"));
@@ -32,6 +33,7 @@ export default function ProtectedApp() {
             <Route path="patients" element={<PatientsPage />} />
             <Route path="patients/:id" element={<PatientDetailPage />} />
             <Route path="consent/:visitId" element={<ConsentPage />} />
+            <Route path="consent-declined" element={<PatientDeclinedConsentPage />} />
             <Route path="walk-in-confirmation" element={<WalkInConfirmationPage />} />
             <Route path="schedule-confirmation" element={<ScheduleConfirmationPage />} />
             <Route path="scan-share" element={<AbhaScanSharePage />} />

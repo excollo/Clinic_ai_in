@@ -1,10 +1,20 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { weeklyAppointments } from "@/lib/mocks/calendar";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RegisterPatientModal } from "@/components/RegisterPatientModal";
+import apiClient from "@/lib/apiClient";
+import { useAuthStore } from "@/lib/authStore";
 
 type ViewMode = "day" | "week" | "month";
+type CalendarAppointment = {
+  id: string;
+  visitId: string;
+  patientName: string;
+  visitType: "scheduled" | "follow-up" | "chronic care";
+  start: string;
+  end: string;
+};
 
 export default function CalendarPage() {
   const { t } = useTranslation();
@@ -14,14 +24,57 @@ export default function CalendarPage() {
   const [prefill, setPrefill] = useState<{ date?: string; time?: string }>({});
   const [popoverId, setPopoverId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const doctorId = useAuthStore((s) => s.doctorId);
+  const appointmentsQuery = useQuery({
+    queryKey: ["calendar-appointments", doctorId],
+    enabled: Boolean(doctorId),
+    queryFn: async () => {
+      const response = await apiClient.get(`/visits/provider/${doctorId}/upcoming`);
+      const rows = (response.data?.appointments ?? []) as Array<{
+        appointment_id?: string;
+        visit_id?: string;
+        patient_name?: string;
+        appointment_type?: string;
+        scheduled_start?: string;
+        status?: string;
+      }>;
+
+      const mapped: CalendarAppointment[] = rows
+        .filter((row) => Boolean(row.scheduled_start) && Boolean(row.visit_id || row.appointment_id))
+        .map((row) => {
+          const start = new Date(row.scheduled_start as string);
+          const end = new Date(start);
+          end.setMinutes(end.getMinutes() + 20);
+          const rawType = String(row.appointment_type ?? "").toLowerCase();
+          const visitType: CalendarAppointment["visitType"] =
+            rawType === "follow-up" || rawType === "follow up"
+              ? "follow-up"
+              : rawType === "chronic care"
+                ? "chronic care"
+                : "scheduled";
+          const resolvedVisitId = String(row.visit_id || row.appointment_id);
+          return {
+            id: String(row.appointment_id || resolvedVisitId),
+            visitId: resolvedVisitId,
+            patientName: row.patient_name || "Unknown Patient",
+            visitType,
+            start: start.toISOString(),
+            end: end.toISOString(),
+          };
+        });
+      return mapped;
+    },
+  });
+  const appointments = appointmentsQuery.data ?? [];
   const grouped = useMemo(() => {
-    const map = new Map<string, typeof weeklyAppointments>();
-    weeklyAppointments.forEach((item) => {
+    const map = new Map<string, CalendarAppointment[]>();
+    appointments.forEach((item) => {
       const key = item.start.slice(0, 10);
       map.set(key, [...(map.get(key) ?? []), item]);
     });
     return map;
-  }, []);
+  }, [appointments]);
 
   const chipColor = (type: string) => (type === "follow-up" ? "bg-green-100 text-green-700" : type === "chronic care" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700");
 
@@ -48,6 +101,8 @@ export default function CalendarPage() {
           <button key={v} onClick={() => setView(v)} className={`rounded-lg px-3 py-1 text-sm ${view === v ? "bg-clinic-primary text-white" : "border border-clinic-border bg-white"}`}>{t(`calendar.${v}`)}</button>
         ))}
       </div>
+      {appointmentsQuery.isLoading && <p className="text-sm text-clinic-muted">Loading appointments...</p>}
+      {appointmentsQuery.isError && <p className="text-sm text-red-600">Failed to load appointments from server.</p>}
 
       {view === "week" && (
         <div className="grid grid-cols-7 gap-2">
@@ -125,7 +180,15 @@ export default function CalendarPage() {
           ))}
         </div>
       )}
-      <RegisterPatientModal open={slotModalOpen} onClose={() => setSlotModalOpen(false)} initialWorkflow="scheduled" initialSchedule={prefill} />
+      <RegisterPatientModal
+        open={slotModalOpen}
+        onClose={() => setSlotModalOpen(false)}
+        onRegistered={() => {
+          void queryClient.invalidateQueries({ queryKey: ["calendar-appointments", doctorId] });
+        }}
+        initialWorkflow="scheduled"
+        initialSchedule={prefill}
+      />
     </div>
   );
 }

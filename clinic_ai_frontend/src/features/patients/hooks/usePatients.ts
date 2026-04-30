@@ -91,19 +91,14 @@ function applyClientFilters(
 }
 
 async function fetchAllPatients(search: string, filter: string): Promise<RealPatientsResponse> {
-  try {
-    const response = await apiClient.get("/patients", {
-      params: { limit: PAGE_SIZE, offset: 0, search, filter },
-    });
-    if (Array.isArray(response.data?.patients)) {
-      return response.data as RealPatientsResponse;
-    }
-  } catch {
-    // Fallback handled below.
-  }
-
-  const fallback = await apiClient.get("/api/patients");
-  const list = Array.isArray(fallback.data) ? fallback.data : [];
+  const response = await apiClient.get("/patients", {
+    params: { limit: PAGE_SIZE, offset: 0, search, filter },
+  });
+  const list = Array.isArray(response.data)
+    ? (response.data as RawPatient[])
+    : Array.isArray(response.data?.patients)
+      ? (response.data.patients as RawPatient[])
+      : [];
   return {
     patients: list,
     total: list.length,

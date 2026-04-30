@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuthStore } from "@/lib/authStore";
 import { fetchConsentText } from "@/lib/mocks/consent";
-import { queueClinicalRecord, runSyncNow } from "@/lib/offline/sync";
+import apiClient from "@/lib/apiClient";
 
 export default function ConsentPage() {
   const { t } = useTranslation();
@@ -13,7 +13,7 @@ export default function ConsentPage() {
   const location = useLocation();
   const doctorId = useAuthStore((s) => s.doctorId ?? "doctor-opaque-001");
   const doctorName = useAuthStore((s) => s.doctorName ?? t("common.doctor"));
-  const state = location.state as { patient_id?: string; patientName?: string; patientLanguage?: string; visitType?: "walk_in" | "scheduled" } | undefined;
+  const state = location.state as { patient_id?: string; token_number?: string; patientName?: string; patientLanguage?: string; visitType?: "walk_in" | "scheduled" } | undefined;
   const [confirmed, setConfirmed] = useState(false);
   const language = state?.patientLanguage ?? t("registration.hindi");
   const consentQuery = useQuery({
@@ -23,28 +23,39 @@ export default function ConsentPage() {
   const timestamp = useMemo(() => new Date().toLocaleTimeString(), []);
 
   const captureConsent = async () => {
-    const id = crypto.randomUUID();
-    await queueClinicalRecord("consent", {
-      id,
-      patient_id: state?.patient_id ?? "pat_unknown",
-      visit_id: visitId,
-      doctor_id: doctorId,
-      language,
-      patient_confirmed: true,
-      consent_text_version: "v1.2",
-      payload: {
+    await apiClient.post(
+      "/consent/capture",
+      {
         patient_id: state?.patient_id,
         visit_id: visitId,
         doctor_id: doctorId,
         language,
         consent_text_version: "v1.2",
-        patient_confirmed: true,
+        status: "accepted",
         timestamp: new Date().toISOString(),
       },
-    });
-    void runSyncNow();
+      { headers: { "X-Idempotency-Key": crypto.randomUUID() } },
+    );
     if (state?.visitType === "scheduled") navigate("/schedule-confirmation", { state });
     else navigate("/walk-in-confirmation", { state: { ...state, token_number: state?.token_number } });
+  };
+
+  const declineConsent = async () => {
+    await apiClient.post(
+      "/consent/capture",
+      {
+        patient_id: state?.patient_id,
+        visit_id: visitId,
+        doctor_id: doctorId,
+        language,
+        consent_text_version: "v1.2",
+        status: "declined",
+        decline_reason: "Patient declined on consent screen",
+        timestamp: new Date().toISOString(),
+      },
+      { headers: { "X-Idempotency-Key": crypto.randomUUID() } },
+    );
+    navigate("/consent-declined", { state: { ...state, visitId } });
   };
 
   return (
@@ -63,7 +74,7 @@ export default function ConsentPage() {
       </div>
       <label className="flex items-center gap-2 rounded-xl border border-green-300 bg-green-50 p-3"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> {t("consent.confirmedVerbally")} · {timestamp}</label>
       <div className="flex flex-wrap justify-between gap-2">
-        <button className="rounded-xl border border-red-300 px-4 py-2 text-red-600">{t("consent.declined")}</button>
+        <button onClick={() => void declineConsent()} className="rounded-xl border border-red-300 px-4 py-2 text-red-600">{t("consent.declined")}</button>
         <div className="flex gap-2">
           <button onClick={() => navigate(-1)} className="rounded-xl border border-clinic-border px-4 py-2">{t("common.back")}</button>
           <button disabled={!confirmed} onClick={() => void captureConsent()} className="rounded-xl bg-clinic-primary px-4 py-2 text-white disabled:opacity-50">{t("consent.capture")}</button>

@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { isValidIndianMobile, normalizeIndianMobile } from "@/lib/format";
-import { getMockSlots } from "@/lib/mocks/registration";
 import { registerPatient } from "@/lib/registrationService";
 
 const schema = z.object({
@@ -21,22 +20,42 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+type SlotOption = { label: string; value: string; available: boolean };
+
+function buildSlots(): SlotOption[] {
+  const slots: SlotOption[] = [];
+  for (let hour = 9; hour < 19; hour += 1) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const h12 = hour > 12 ? hour - 12 : hour;
+      const ampm = hour >= 12 ? "PM" : "AM";
+      const m = minute.toString().padStart(2, "0");
+      slots.push({
+        label: `${h12}:${m} ${ampm}`,
+        value: `${hour.toString().padStart(2, "0")}:${m}`,
+        available: true,
+      });
+    }
+  }
+  return slots;
+}
 
 export function RegisterPatientModal({
   open,
   onClose,
+  onRegistered,
   initialWorkflow = "walk_in",
   initialSchedule,
 }: {
   open: boolean;
   onClose: () => void;
+  onRegistered?: () => void;
   initialWorkflow?: "walk_in" | "scheduled";
   initialSchedule?: { date?: string; time?: string };
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [workflow, setWorkflow] = useState<"walk_in" | "scheduled">(initialWorkflow);
-  const slots = useMemo(() => getMockSlots(), []);
+  const slots = useMemo(() => buildSlots(), []);
   const { register, handleSubmit, formState: { errors, isValid, isSubmitting }, setValue, watch, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onBlur",
@@ -69,6 +88,7 @@ export function RegisterPatientModal({
       scheduled_time: values.schedule_time,
     });
     toast.success(t("registration.registered"));
+    onRegistered?.();
     onClose();
     navigate(`/consent/${res.visit_id}`, { state: { ...res, patientName: values.name, patientLanguage: values.preferred_language, visitType: workflow } });
   };

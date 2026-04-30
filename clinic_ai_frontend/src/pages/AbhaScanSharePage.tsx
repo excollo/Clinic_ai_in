@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { lookupAbhaMock } from "@/lib/mocks/abha";
+import apiClient from "@/lib/apiClient";
 
 export default function AbhaScanSharePage() {
   const { t } = useTranslation();
@@ -10,10 +10,23 @@ export default function AbhaScanSharePage() {
   const [error, setError] = useState("");
   const [manual, setManual] = useState("");
   const [loading, setLoading] = useState(false);
+  const [abdmUnavailable, setAbdmUnavailable] = useState(false);
+  const [abdmMessage, setAbdmMessage] = useState("");
 
   useEffect(() => {
     let scanner: { stop: () => void } | undefined;
     const init = async () => {
+      try {
+        await apiClient.post("/patients/abha/lookup", { abha_id: "00000000000000" });
+      } catch (err) {
+        const status = (err as { response?: { status?: number; data?: { detail?: { status?: string; message?: string } } } })?.response?.status;
+        const detail = (err as { response?: { data?: { detail?: { status?: string; message?: string } } } })?.response?.data?.detail;
+        if (status === 503 && detail?.status === "abdm_not_configured") {
+          setAbdmUnavailable(true);
+          setAbdmMessage(detail.message || "ABDM integration is not configured for this clinic. Manual registration is available.");
+          return;
+        }
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         if (videoRef.current) videoRef.current.srcObject = stream;
@@ -34,10 +47,42 @@ export default function AbhaScanSharePage() {
 
   const submit = async () => {
     setLoading(true);
-    const data = await lookupAbhaMock(manual);
-    setLoading(false);
-    navigate("/patients", { state: { prefill: data } });
+    try {
+      const response = await apiClient.post("/patients/abha/lookup", { abha_id: manual });
+      navigate("/patients", { state: { prefill: response.data } });
+    } catch (err) {
+      const status = (err as { response?: { status?: number; data?: { detail?: { status?: string; message?: string } } } })?.response?.status;
+      const detail = (err as { response?: { data?: { detail?: { status?: string; message?: string } } } })?.response?.data?.detail;
+      if (status === 503 && detail?.status === "abdm_not_configured") {
+        setAbdmUnavailable(true);
+        setAbdmMessage(detail.message || "ABDM integration is not configured for this clinic. Manual registration is available.");
+      } else {
+        setError(t("common.error"));
+      }
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (abdmUnavailable) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-h2">{t("abha.title")}</h2>
+        <div className="clinic-card p-6 text-center">
+          <p className="text-lg font-semibold">ABDM not configured</p>
+          <p className="mt-2 text-sm text-clinic-muted">
+            {abdmMessage || "ABHA-based registration requires ABDM integration. Use manual registration instead."}
+          </p>
+          <button
+            onClick={() => navigate("/patients")}
+            className="mt-4 rounded-xl bg-clinic-primary px-4 py-2 text-white"
+          >
+            Register manually
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
