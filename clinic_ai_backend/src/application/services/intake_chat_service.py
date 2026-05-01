@@ -11,6 +11,7 @@ from src.adapters.external.ai.openai_client import IntakeTurnError, OpenAIQuesti
 from src.adapters.external.whatsapp.meta_whatsapp_client import MetaWhatsAppClient
 from src.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 from src.core.config import get_settings
+from src.core.language_support import normalize_intake_language
 
 
 NON_TEXT_MESSAGE_TRIGGER = "__non_text_message__"
@@ -29,7 +30,8 @@ class IntakeChatService:
     def start_intake(self, patient_id: str, visit_id: str, to_number: str, language: str) -> None:
         """Start intake with opening message; first clinical question comes after user reply."""
         normalized_to_number = self._normalize_phone_number(to_number)
-        opening_message = self._opening_message(language)
+        normalized_language = normalize_intake_language(language)
+        opening_message = self._opening_message(normalized_language)
         patient_name = ""
         patients_collection = getattr(self.db, "patients", None)
         if patients_collection is not None:
@@ -43,7 +45,7 @@ class IntakeChatService:
                     "patient_id": patient_id,
                     "visit_id": visit_id,
                     "to_number": normalized_to_number,
-                    "language": language,
+                    "language": normalized_language,
                     "patient_name": patient_name,
                     "status": "awaiting_conversation_start",
                     "greeting_sent": True,
@@ -67,7 +69,7 @@ class IntakeChatService:
         if settings.whatsapp_intake_template_name:
             language_code = (
                 settings.whatsapp_intake_template_lang_hi
-                if language == "hi"
+                if normalized_language == "hi"
                 else settings.whatsapp_intake_template_lang_en
             )
             body_values = [opening_message] if settings.whatsapp_intake_template_param_count > 0 else []
@@ -1014,17 +1016,19 @@ class IntakeChatService:
     @staticmethod
     def _chief_complaint_question(language: str) -> str:
         """Return the question that asks for patient's primary problem."""
+        lang = normalize_intake_language(language)
         return (
             "Please describe your main health problem in a few words."
-            if language == "en"
+            if lang == "en"
             else "Kripya apni mukhya swasthya samasya kuch shabdon mein batayen."
         )
 
     @staticmethod
     def _opening_message(language: str) -> str:
         """Return the initial opening message before intake begins."""
+        lang = normalize_intake_language(language)
         return (
             "Hello! Please reply with any message to begin your intake."
-            if language == "en"
+            if lang == "en"
             else "Namaste! Apna intake shuru karne ke liye koi bhi message bhejiye."
         )

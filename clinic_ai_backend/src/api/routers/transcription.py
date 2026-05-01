@@ -78,7 +78,25 @@ async def upload_transcription_audio(
         sort=[("updated_at", -1)],
     )
     if not previsit:
-        raise HTTPException(status_code=409, detail="PREVISIT_MISSING")
+        # Some flows can reach transcription before a previsit summary is saved.
+        # Instead of blocking with 409, synthesize a minimal previsit record.
+        visit = db.visits.find_one({"visit_id": visit_id}, {"_id": 0}) or {}
+        if not visit:
+            raise HTTPException(status_code=404, detail="VISIT_NOT_FOUND")
+        patient = db.patients.find_one({"patient_id": internal_patient_id}, {"_id": 0}) or {}
+        now = datetime.now(timezone.utc)
+        previsit = {
+            "patient_id": internal_patient_id,
+            "visit_id": visit_id,
+            "chief_complaint": str(visit.get("chief_complaint") or ""),
+            "age": patient.get("age"),
+            "sex": patient.get("sex"),
+            "language": patient.get("language") or "en",
+            "created_at": now,
+            "updated_at": now,
+            "source": "transcription_autofill",
+        }
+        db.pre_visit_summaries.insert_one(previsit)
 
     settings = get_settings()
     if not settings.azure_speech_key:
