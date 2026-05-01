@@ -18,6 +18,6 @@ class TranscriptionUploadAcceptedResponse(BaseModel):
     message_id: str
     patient_id: str
     visit_id: str
-    status: Literal["queued", "processing", "completed", "failed"]
+    status: Literal["queued", "processing", "completed", "failed", "timeout"]
     received_at: datetime
     message: str | None = None

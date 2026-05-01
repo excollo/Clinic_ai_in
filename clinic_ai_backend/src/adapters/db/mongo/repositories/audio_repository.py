@@ -52,6 +52,7 @@ class AudioRepository:
         language_mix: str,
         speaker_mode: str,
         max_retries: int,
+        idempotency_key: str | None = None,
     ) -> dict:
         now = _utc_now()
         doc = {
@@ -72,6 +73,7 @@ class AudioRepository:
             "updated_at": now,
             "error_code": None,
             "error_message": None,
+            "idempotency_key": idempotency_key,
         }
         self.transcription_jobs.insert_one(doc)
         return doc

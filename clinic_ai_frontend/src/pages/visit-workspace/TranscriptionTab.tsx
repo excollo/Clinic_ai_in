@@ -1,14 +1,25 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useVisitStore } from "@/lib/visitStore";
 import type { TranscriptionResult } from "@/api/types";
-import { TranscriptionJobError, transcribeVisitAudio } from "@/features/visits/hooks/useTranscription";
+import {
+  TranscriptionJobError,
+  extractApiErrorMessage,
+  pollTranscriptionUntilTerminal,
+  transcribeVisitAudio,
+} from "@/features/visits/hooks/useTranscription";
+import {
+  initialTranscriptionState,
+  transcriptionStateReducer,
+} from "@/features/visits/hooks/transcriptionState";
 
 export default function TranscriptionTab({ onGenerate }: { onGenerate: () => void }) {
+  const transcriptionStorageKey = "clinic_transcription_active_job";
   const { t } = useTranslation();
   const visit = useVisitStore();
-  const [state, setState] = useState<"idle" | "recording" | "processing" | "done">("idle");
+  const [model, dispatch] = useReducer(transcriptionStateReducer, initialTranscriptionState);
+  const [state, setState] = useState<"idle" | "recording" | "done">("idle");
   const [seconds, setSeconds] = useState(0);
   const [noiseEnvironment, setNoiseEnvironment] = useState("quiet_clinic");
   const [languageMix, setLanguageMix] = useState("hi-en");
@@ -23,22 +34,75 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
   const startAtRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const persistActiveJob = (jobId: string) => {
+    localStorage.setItem(
+      transcriptionStorageKey,
+      JSON.stringify({
+        patientId: visit.patientId,
+        visitId: visit.visitId,
+        jobId,
+        languageMix,
+        updatedAt: Date.now(),
+      }),
+    );
+  };
+
+  const clearActiveJob = () => localStorage.removeItem(transcriptionStorageKey);
+
+  const computeFileIdempotencyKey = async (blob: Blob) => {
+    const bytes = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+    const digest = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return `transcription:${visit.patientId}:${visit.visitId}:${digest}`;
+  };
+
   const runTranscription = async (blob: Blob, filename = "visit-audio.webm") => {
-    setState("processing");
+    dispatch({ type: "start_upload" });
     setFailedReason(null);
     setLastAudioBlob(blob);
     setLastFilename(filename);
     try {
-      const transcription = await transcribeVisitAudio({
+      const idempotencyKey = await computeFileIdempotencyKey(blob);
+      const accepted = await transcribeVisitAudio({
         patientId: visit.patientId,
         visitId: visit.visitId,
         audioBlob: blob,
         noiseEnvironment,
         languageMix,
         filename,
+        idempotencyKey,
       });
-      setResult(transcription);
-      setState("done");
+      dispatch({
+        type: "job_accepted",
+        jobId: accepted.jobId,
+        status: accepted.status === "queued" ? "queued" : "processing",
+        message: accepted.message,
+      });
+      persistActiveJob(accepted.jobId);
+      const pollResult = await pollTranscriptionUntilTerminal({
+        patientId: visit.patientId,
+        visitId: visit.visitId,
+        languageMix,
+        jobId: accepted.jobId,
+        onStatus: (status) =>
+          dispatch({
+            type: "poll_update",
+            status: status.status,
+            jobId: status.jobId,
+            message: status.message,
+          }),
+      });
+      if (pollResult.kind === "completed") {
+        setResult(pollResult.result);
+        dispatch({ type: "completed" });
+        setState("done");
+        clearActiveJob();
+      } else {
+        dispatch({ type: "poll_update", status: "processing", message: pollResult.message, jobId: pollResult.jobId });
+        toast.message(pollResult.message);
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
       if (error instanceof TranscriptionJobError) {
@@ -48,9 +112,61 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
       }
       setFailedReason(reason);
       toast.error(reason || "Transcript processing failed");
+      dispatch({ type: "failed", error: reason });
       setState("idle");
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const resume = async () => {
+      const raw = localStorage.getItem(transcriptionStorageKey);
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw) as {
+          patientId?: string;
+          visitId?: string;
+          jobId?: string;
+          languageMix?: string;
+        };
+        if (parsed.patientId !== visit.patientId || parsed.visitId !== visit.visitId || !parsed.jobId) return;
+        dispatch({ type: "job_accepted", jobId: parsed.jobId, status: "processing", message: "Resuming transcription status..." });
+        const pollResult = await pollTranscriptionUntilTerminal({
+          patientId: visit.patientId,
+          visitId: visit.visitId,
+          languageMix: parsed.languageMix || languageMix,
+          jobId: parsed.jobId,
+          onStatus: (status) =>
+            dispatch({
+              type: "poll_update",
+              status: status.status,
+              jobId: status.jobId,
+              message: status.message,
+            }),
+        });
+        if (cancelled) return;
+        if (pollResult.kind === "completed") {
+          setResult(pollResult.result);
+          dispatch({ type: "completed" });
+          setState("done");
+          clearActiveJob();
+        } else {
+          dispatch({ type: "poll_update", status: "processing", message: pollResult.message, jobId: pollResult.jobId });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = extractApiErrorMessage(error);
+          dispatch({ type: "failed", error: message });
+          setFailedReason(message);
+        }
+      }
+    };
+    void resume();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visit.patientId, visit.visitId]);
 
   const start = async () => {
     try {
@@ -115,7 +231,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
             </div>
             <button
               type="button"
-              disabled={!selectedAudioFile || state === "processing"}
+              disabled={!selectedAudioFile || model.state === "uploading" || model.state === "queued" || model.state === "processing"}
               onClick={() => selectedAudioFile && runTranscription(selectedAudioFile, selectedAudioFile.name)}
               className="rounded-2xl bg-[#79d0a6] px-8 py-3 text-2xl font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
             >
@@ -148,7 +264,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
               Stop Recording
             </button>
           )}
-          {(state === "recording" || state === "processing") && (
+          {(state === "recording" || model.state === "uploading" || model.state === "queued" || model.state === "processing") && (
             <p className="text-lg text-clinic-muted">Recording time: {mmss}</p>
           )}
         </div>
@@ -165,7 +281,11 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
           <option value="multilingual">{t("transcription.langMultilingual")}</option>
         </select>
       </div>
-      {state === "processing" && <p className="mt-2 text-sm text-clinic-muted">{t("transcription.processing")}</p>}
+      {(model.state === "uploading" || model.state === "queued" || model.state === "processing") && (
+        <p className="mt-2 text-sm text-clinic-muted">
+          {model.message || t("transcription.processing")}
+        </p>
+      )}
       {failedReason && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <p>Transcript processing failed.</p>
@@ -174,7 +294,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
             <button
               type="button"
               onClick={() => lastAudioBlob && runTranscription(lastAudioBlob, lastFilename)}
-              disabled={!lastAudioBlob || state === "processing"}
+              disabled={!lastAudioBlob || model.state === "uploading" || model.state === "queued" || model.state === "processing"}
               className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
             >
               Try again
@@ -202,7 +322,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
         }}
       />
       <div className="rounded-xl bg-blue-50 p-3 text-sm text-blue-700">{t("transcription.tip")}</div>
-      {state === "done" && (
+      {model.state === "completed" && (
         <div className="clinic-card p-4">
           <div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">{t("transcription.transcript")}</h3><button onClick={onGenerate} className="rounded-xl bg-clinic-primary px-3 py-2 text-sm text-white">{t("transcription.generateClinical")}</button></div>
           <div className="space-y-2">

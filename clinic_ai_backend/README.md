@@ -91,6 +91,56 @@ make api
 - **Azure Speech (current worker)**: Short-audio REST with **HTTP POST bodies** chunked by the worker (**no SAS URL yet**).
 - **Azure Speech (batch rollout, Sprint 2B Chunk 3)**: Requires a **world-readable HTTPS URL** for Azure to pull WAV/MP3. Chunk 2 implements **`GET /internal/audio/{audio_id}?token=...`** minted via `PUBLIC_BACKEND_URL` + `AUDIO_URL_SIGNING_SECRET`; see `docs/deployment-azure-speech.md` and **`TECH_DEBT.md`** on Render idle-sleep risks.
 
+## Transcription lifecycle
+- `POST /api/notes/transcribe` is asynchronous and returns quickly with a job id.
+- Poll `GET /api/notes/transcribe/status/{patient_id}/{visit_id}` until terminal status.
+- Fetch structured transcript via `GET /api/notes/{patient_id}/visits/{visit_id}/dialogue` when status is `completed`.
+- Long-running jobs remain `queued`/`processing`/`timeout`; they are not treated as failed unless backend marks `failed`.
+
+### Start transcription request
+```http
+POST /api/notes/transcribe
+Content-Type: multipart/form-data
+X-Idempotency-Key: transcription:pat_123:vis_123:sha256...
+```
+
+### Start transcription response (202)
+```json
+{
+  "job_id": "job_abc123",
+  "message_id": "job_abc123",
+  "patient_id": "opaque_patient_id",
+  "visit_id": "vis_123",
+  "status": "queued",
+  "message": "Transcription queued. Poll /api/notes/transcribe/status/opaque_patient_id/vis_123 for status."
+}
+```
+
+### Status response example (processing)
+```json
+{
+  "jobId": "job_abc123",
+  "status": "processing",
+  "progress": 65,
+  "etaSeconds": null,
+  "errorCode": null,
+  "errorMessage": null,
+  "retryable": false,
+  "message": "Transcription in progress (running for 84 seconds)"
+}
+```
+
+### Status response example (completed)
+```json
+{
+  "jobId": "job_abc123",
+  "status": "completed",
+  "progress": 100,
+  "transcript_available": true,
+  "message": "Transcription completed successfully"
+}
+```
+
 ## Azure Speech and MP3 uploads
 Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants decode to “success” with an empty transcript. The worker **normalizes uploads with FFmpeg** to 16 kHz mono PCM WAV before calling Azure when `ffmpeg` is on `PATH`.
 

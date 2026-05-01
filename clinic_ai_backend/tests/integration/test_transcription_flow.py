@@ -489,3 +489,85 @@ def test_worker_visit_uses_openai_structure_when_segments_are_unknown(
     assert result is not None
     assert len(result.get("segments") or []) == 1
     assert result["segments"][0]["speaker_label"] == "Patient"
+
+
+def test_visit_status_reports_timeout_not_failed_for_stale_processing(app_client, fake_db) -> None:
+    now = datetime.now(timezone.utc)
+    fake_db.visit_transcription_sessions.insert_one(
+        {
+            "patient_id": "p-long",
+            "visit_id": "v-long",
+            "job_id": "j-long",
+            "transcription_status": "processing",
+            "started_at": now - timedelta(minutes=45),
+            "last_poll_at": now - timedelta(minutes=25),
+            "updated_at": now - timedelta(minutes=25),
+        }
+    )
+    fake_db.transcription_jobs.insert_one(
+        {
+            "job_id": "j-long",
+            "audio_id": "a-long",
+            "patient_id": "p-long",
+            "visit_id": "v-long",
+            "status": "processing",
+            "created_at": now - timedelta(minutes=46),
+            "updated_at": now - timedelta(minutes=25),
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+    )
+
+    response = app_client.get("/api/notes/transcribe/status/p-long/v-long")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "timeout"
+    assert payload["jobId"] == "j-long"
+    assert "still processing" in payload["message"].lower()
+
+
+def test_visit_status_eventually_transitions_to_completed(app_client, fake_db) -> None:
+    now = datetime.now(timezone.utc)
+    fake_db.visit_transcription_sessions.insert_one(
+        {
+            "patient_id": "p-e2",
+            "visit_id": "v-e2",
+            "job_id": "j-e2",
+            "transcription_status": "processing",
+            "started_at": now - timedelta(seconds=30),
+            "last_poll_at": now - timedelta(seconds=5),
+            "updated_at": now - timedelta(seconds=5),
+            "transcript": None,
+        }
+    )
+    fake_db.transcription_jobs.insert_one(
+        {
+            "job_id": "j-e2",
+            "audio_id": "a-e2",
+            "patient_id": "p-e2",
+            "visit_id": "v-e2",
+            "status": "processing",
+            "created_at": now - timedelta(seconds=35),
+            "updated_at": now - timedelta(seconds=5),
+            "retry_count": 0,
+            "max_retries": 3,
+        }
+    )
+
+    first = app_client.get("/api/notes/transcribe/status/p-e2/v-e2")
+    assert first.status_code == 200
+    assert first.json()["status"] == "processing"
+
+    fake_db.visit_transcription_sessions.update_one(
+        {"patient_id": "p-e2", "visit_id": "v-e2"},
+        {"$set": {"transcription_status": "completed", "transcript": "hello world", "completed_at": datetime.now(timezone.utc)}},
+    )
+    fake_db.transcription_jobs.update_one(
+        {"job_id": "j-e2"},
+        {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc)}},
+    )
+
+    second = app_client.get("/api/notes/transcribe/status/p-e2/v-e2")
+    assert second.status_code == 200
+    assert second.json()["status"] == "completed"
+    assert second.json()["transcript"] == "hello world"

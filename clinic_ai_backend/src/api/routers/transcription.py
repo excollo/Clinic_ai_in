@@ -61,6 +61,35 @@ def _iso_utc(value: datetime | None) -> str | None:
     return _as_utc_aware(value).isoformat()
 
 
+def _status_is_active(status: str) -> bool:
+    return status in {"queued", "processing", "stale_processing", "timeout"}
+
+
+def _normalize_status_for_api(status: str) -> str:
+    normalized = (status or "").strip().lower()
+    if normalized == "stale_processing":
+        return "timeout"
+    return normalized or "pending"
+
+
+def _status_progress_percent(status: str) -> int:
+    normalized = _normalize_status_for_api(status)
+    if normalized == "queued":
+        return 15
+    if normalized in {"processing", "timeout"}:
+        return 65
+    if normalized in {"completed", "failed"}:
+        return 100
+    return 0
+
+
+def _is_retryable_error_code(error_code: str | None) -> bool:
+    code = (error_code or "").upper()
+    if not code:
+        return False
+    return code.endswith("_RETRY") or "TIMEOUT" in code or "RATE_LIMIT" in code or "NETWORK" in code
+
+
 @router.post("/transcribe", response_model=TranscriptionUploadAcceptedResponse, status_code=202)
 async def upload_transcription_audio(
     request: Request,
@@ -122,6 +151,83 @@ async def upload_transcription_audio(
         )
 
     digest = hashlib.sha256(payload).hexdigest()
+    idempotency_key = str(request.headers.get("X-Idempotency-Key") or "").strip() or None
+    visit_repo = VisitTranscriptionRepository()
+    session = visit_repo.get_session(patient_id=internal_patient_id, visit_id=visit_id)
+    now = datetime.now(timezone.utc)
+
+    if session:
+        existing_status = str(session.get("transcription_status") or "").lower()
+        existing_job_id = str(session.get("job_id") or "").strip()
+        if existing_job_id and _status_is_active(existing_status):
+            opaque_patient_id = encode_patient_id(internal_patient_id)
+            poll_hint = f"/api/notes/transcribe/status/{opaque_patient_id}/{visit_id}"
+            return TranscriptionUploadAcceptedResponse(
+                job_id=existing_job_id,
+                message_id=existing_job_id,
+                patient_id=opaque_patient_id,
+                visit_id=visit_id,
+                status=_normalize_status_for_api(existing_status),  # type: ignore[arg-type]
+                received_at=now,
+                message=f"Using existing in-progress transcription job. Poll {poll_hint} for status.",
+            )
+
+    if idempotency_key:
+        existing_by_key = db.transcription_jobs.find_one(
+            {
+                "patient_id": internal_patient_id,
+                "visit_id": visit_id,
+                "idempotency_key": idempotency_key,
+            },
+            sort=[("created_at", -1)],
+        )
+        if existing_by_key:
+            existing_status = str(existing_by_key.get("status") or "queued").lower()
+            existing_job_id = str(existing_by_key.get("job_id") or "")
+            opaque_patient_id = encode_patient_id(internal_patient_id)
+            poll_hint = f"/api/notes/transcribe/status/{opaque_patient_id}/{visit_id}"
+            return TranscriptionUploadAcceptedResponse(
+                job_id=existing_job_id,
+                message_id=existing_job_id,
+                patient_id=opaque_patient_id,
+                visit_id=visit_id,
+                status=_normalize_status_for_api(existing_status),  # type: ignore[arg-type]
+                received_at=now,
+                message=f"Idempotent retry matched existing job. Poll {poll_hint} for status.",
+            )
+
+    recent_audio = db.audio_files.find_one(
+        {
+            "patient_id": internal_patient_id,
+            "visit_id": visit_id,
+            "sha256": digest,
+        },
+        sort=[("uploaded_at", -1)],
+    )
+    if recent_audio:
+        existing_by_audio = db.transcription_jobs.find_one(
+            {
+                "audio_id": recent_audio.get("audio_id"),
+                "patient_id": internal_patient_id,
+                "visit_id": visit_id,
+            },
+            sort=[("created_at", -1)],
+        )
+        if existing_by_audio and _status_is_active(str(existing_by_audio.get("status") or "").lower()):
+            existing_status = str(existing_by_audio.get("status") or "queued").lower()
+            existing_job_id = str(existing_by_audio.get("job_id") or "")
+            opaque_patient_id = encode_patient_id(internal_patient_id)
+            poll_hint = f"/api/notes/transcribe/status/{opaque_patient_id}/{visit_id}"
+            return TranscriptionUploadAcceptedResponse(
+                job_id=existing_job_id,
+                message_id=existing_job_id,
+                patient_id=opaque_patient_id,
+                visit_id=visit_id,
+                status=_normalize_status_for_api(existing_status),  # type: ignore[arg-type]
+                received_at=now,
+                message=f"Matching audio is already processing. Poll {poll_hint} for status.",
+            )
+
     now = datetime.now(timezone.utc)
     audio_id = str(uuid4())
     job_id = str(uuid4())
@@ -165,6 +271,7 @@ async def upload_transcription_audio(
         language_mix=effective_language,
         speaker_mode=speaker_mode,
         max_retries=settings.transcription_max_retries,
+        idempotency_key=idempotency_key,
     )
     queue_message_id = await get_queue_adapter().enqueue(
         TranscriptionQueueJob(
@@ -184,7 +291,7 @@ async def upload_transcription_audio(
         context={"patient_id": internal_patient_id, "visit_id": visit_id},
     )
 
-    VisitTranscriptionRepository().upsert_queued(
+    visit_repo.upsert_queued(
         patient_id=internal_patient_id,
         visit_id=visit_id,
         job_id=job_id,
@@ -266,18 +373,30 @@ def get_visit_transcription_status(patient_id: str, visit_id: str, request: Requ
             is_stale = True
             transcription_status = "stale_processing"
 
-    repo.touch_poll(patient_id=internal_pid, visit_id=internal_vid, last_poll_status=transcription_status)
+    api_status = _normalize_status_for_api(transcription_status)
+    repo.touch_poll(patient_id=internal_pid, visit_id=internal_vid, last_poll_status=api_status)
     _set_audit_state(
         request,
         action="transcription_status_checked",
         resource_type="visit_transcription_session",
         resource_id=f"{internal_pid}:{internal_vid}",
-        context={"status": transcription_status},
+        context={"status": api_status},
     )
+    job_id = str(session.get("job_id") or "")
+    job = AudioRepository().get_job(job_id) if job_id else None
+    error_code = str((job or {}).get("error_code") or "") or None
+    error_message = str((job or {}).get("error_message") or session.get("error_message") or "") or None
 
     status_info: dict = {
-        "status": transcription_status,
-        "transcription_id": session.get("transcription_id"),
+        "jobId": job_id or None,
+        "transcriptionId": session.get("transcription_id"),
+        "status": api_status,
+        "progress": _status_progress_percent(api_status),
+        "etaSeconds": None,
+        "transcript": None,
+        "errorCode": error_code,
+        "errorMessage": error_message,
+        "retryable": _is_retryable_error_code(error_code),
         "started_at": _iso_utc(session.get("started_at")),
         "last_poll_status": transcription_status,
         "last_poll_at": _iso_utc(now),
@@ -286,17 +405,18 @@ def get_visit_transcription_status(patient_id: str, visit_id: str, request: Requ
         "dequeued_at": _iso_utc(session.get("dequeued_at")),
     }
 
-    if transcription_status == "completed":
+    if api_status == "completed":
+        status_info["transcript"] = session.get("transcript")
         status_info["transcript_available"] = True
         status_info["word_count"] = session.get("word_count")
         status_info["duration"] = session.get("audio_duration_seconds")
         status_info["audio_duration_seconds"] = session.get("audio_duration_seconds")
         status_info["completed_at"] = _iso_utc(session.get("completed_at"))
         status_info["message"] = "Transcription completed successfully"
-    elif transcription_status in ("processing", "stale_processing"):
+    elif api_status in {"processing", "timeout"}:
         status_info["audio_duration_seconds"] = session.get("audio_duration_seconds")
         status_info["message"] = (
-            f"Transcription appears stuck (processing for {age_minutes:.1f} minutes). May need manual intervention."
+            "Transcription is still processing in background. You can keep this page open or check again shortly."
             if is_stale
             else (
                 f"Transcription in progress (running for {(now - started_at_utc).total_seconds():.0f} seconds)"
@@ -305,12 +425,12 @@ def get_visit_transcription_status(patient_id: str, visit_id: str, request: Requ
             )
         )
         if is_stale:
-            status_info["next_action"] = "retry_or_reset"
-    elif transcription_status == "failed":
+            status_info["next_action"] = "keep_polling_or_check_later"
+    elif api_status == "failed":
         status_info["error"] = session.get("error_message")
         status_info["message"] = f"Transcription failed: {session.get('error_message')}"
     else:
-        status_info["message"] = f"Transcription status: {transcription_status}"
+        status_info["message"] = f"Transcription status: {api_status}"
 
     return status_info
 

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useAuthFlowStore } from "@/lib/authFlowStore";
+import { isValidIndianMobile } from "@/lib/format";
 import { sendOtp, signupDoctor } from "@/lib/mocks/auth";
 import { AuthCard, Field, MobileInput, OtpInput } from "@/features/auth/components";
 
@@ -20,19 +21,34 @@ export default function SignupPage() {
 
   const sendSignupOtp = async () => {
     const values = form.getValues();
-    const mobile = values.mobile || signup.mobile;
-    const res = await sendOtp(mobile);
-    setOtpRequestId(res.request_id);
-    updateSignup({
-      fullName: values.fullName || signup.fullName,
-      mobile,
-      email: values.email || signup.email,
-      regNo: values.regNo || signup.regNo,
-      specialty: values.specialty || signup.specialty,
-      password: values.password || signup.password,
-      otpRequestId: res.request_id,
-    });
-    setStep(2);
+    const mobile = (values.mobile || signup.mobile || "").trim();
+    if (!isValidIndianMobile(mobile)) {
+      toast.error(t("auth.mobileValidation"));
+      return;
+    }
+    try {
+      const res = await sendOtp(mobile);
+      setOtpRequestId(res.request_id);
+      updateSignup({
+        fullName: values.fullName || signup.fullName,
+        mobile,
+        email: values.email || signup.email,
+        regNo: values.regNo || signup.regNo,
+        specialty: values.specialty || signup.specialty,
+        password: values.password || signup.password,
+        otpRequestId: res.request_id,
+      });
+      setStep(2);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string | { detail?: string } } } })?.response?.data?.detail;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : typeof detail === "object" && detail?.detail
+            ? detail.detail
+            : t("common.error");
+      toast.error(message);
+    }
   };
   const finishSignup = async () => {
     const values = form.getValues();
@@ -105,7 +121,16 @@ export default function SignupPage() {
       {step === 1 && (
         <form className="space-y-3" onSubmit={form.handleSubmit(() => void sendSignupOtp())}>
           <Field label={t("auth.fullName")} required><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("fullName", { required: true })} /></Field>
-          <Field label={t("auth.mobileNumber")} required><MobileInput value={signup.mobile} onChange={(v) => updateSignup({ mobile: v })} /></Field>
+          <Field label={t("auth.mobileNumber")} required>
+            <input type="hidden" {...form.register("mobile", { required: true, validate: isValidIndianMobile })} />
+            <MobileInput
+              value={form.watch("mobile") || ""}
+              onChange={(v) => {
+                form.setValue("mobile", v, { shouldDirty: true, shouldValidate: true });
+                updateSignup({ mobile: v });
+              }}
+            />
+          </Field>
           <Field label={t("auth.emailOptional")}><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("email")} /></Field>
           <Field label={t("auth.registrationNumber")} required><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("regNo", { required: true })} /></Field>
           <Field label={t("auth.specialty")} required><select className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("specialty", { required: true })}><option value="">{t("auth.specialtySelect")}</option><option>{t("auth.specialtyGeneralMedicine")}</option><option>{t("auth.specialtyPediatrics")}</option><option>{t("auth.specialtyCardiology")}</option><option>{t("auth.specialtyGynecology")}</option><option>{t("auth.specialtyDermatology")}</option><option>{t("auth.specialtyOrthopedics")}</option><option>{t("auth.specialtyEnt")}</option><option>{t("auth.specialtyPsychiatry")}</option><option>{t("auth.specialtyOther")}</option></select></Field>

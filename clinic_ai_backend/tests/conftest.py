@@ -172,6 +172,7 @@ class InMemoryDatabase:
         self.audio_files = InMemoryCollection()
         self.transcription_jobs = InMemoryCollection()
         self.transcription_results = InMemoryCollection()
+        self.audio_signed_url_redemptions = InMemoryCollection()
         self.transcription_queue = InMemoryCollection()
         self.pre_visit_summaries = InMemoryCollection()
         self.intake_sessions = InMemoryCollection()
