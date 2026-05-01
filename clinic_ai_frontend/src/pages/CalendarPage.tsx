@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RegisterPatientModal } from "@/components/RegisterPatientModal";
+import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/apiClient";
 import { useAuthStore } from "@/lib/authStore";
 import { toast } from "sonner";
@@ -22,12 +21,9 @@ export default function CalendarPage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [slotModalOpen, setSlotModalOpen] = useState(false);
-  const [prefill, setPrefill] = useState<{ date?: string; time?: string }>({});
   const [importedRows, setImportedRows] = useState<CalendarAppointment[]>([]);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const queryClient = useQueryClient();
   const doctorId = useAuthStore((s) => s.doctorId);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const appointmentsQuery = useQuery({
@@ -158,15 +154,20 @@ export default function CalendarPage() {
   useEffect(() => {
     if (searchParams.get("new") !== "1") return;
     const d = new Date();
-    setPrefill({
-      date: d.toISOString().slice(0, 10),
-      time: `${String(d.getHours()).padStart(2, "0")}:00`,
+    navigate("/register-patient", {
+      state: {
+        initialWorkflow: "scheduled",
+        initialSchedule: {
+          date: d.toISOString().slice(0, 10),
+          time: `${String(d.getHours()).padStart(2, "0")}:00`,
+        },
+      },
+      replace: true,
     });
-    setSlotModalOpen(true);
     const next = new URLSearchParams(searchParams);
     next.delete("new");
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [navigate, searchParams, setSearchParams]);
 
   return (
     <div className="space-y-4">
@@ -198,8 +199,15 @@ export default function CalendarPage() {
           <button
             onClick={() => {
               const d = new Date();
-              setPrefill({ date: d.toISOString().slice(0, 10), time: `${String(d.getHours()).padStart(2, "0")}:00` });
-              setSlotModalOpen(true);
+              navigate("/register-patient", {
+                state: {
+                  initialWorkflow: "scheduled",
+                  initialSchedule: {
+                    date: d.toISOString().slice(0, 10),
+                    time: `${String(d.getHours()).padStart(2, "0")}:00`,
+                  },
+                },
+              });
             }}
             className="rounded-xl bg-clinic-primary px-4 py-2 text-white"
           >
@@ -287,15 +295,6 @@ export default function CalendarPage() {
           )}
         </div>
       </div>
-      <RegisterPatientModal
-        open={slotModalOpen}
-        onClose={() => setSlotModalOpen(false)}
-        onRegistered={() => {
-          void queryClient.invalidateQueries({ queryKey: ["calendar-appointments", doctorId] });
-        }}
-        initialWorkflow="scheduled"
-        initialSchedule={prefill}
-      />
     </div>
   );
 }

@@ -1,0 +1,16 @@
+[
+  {
+    "consent_id": "consent_40f6553ffd06476a",
+    "idempotency_key": "e2e2-accept-1",
+    "patient_id": "pat_40079e3860",
+    "visit_id": "vis_93fb31a5e7",
+    "doctor_id": "doctor-s2a-e2e2",
+    "language": "english",
+    "consent_text_version": "v1.2",
+    "patient_confirmed": true,
+    "status": "accepted",
+    "decline_reason": null,
+    "timestamp": "2026-05-01 00:00:00",
+    "recorded_at": "2026-04-30T23:23:35.252696+00:00"
+  }
+]

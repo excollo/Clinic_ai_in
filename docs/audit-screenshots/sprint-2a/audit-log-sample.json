@@ -1,0 +1,115 @@
+[
+  {
+    "entry_id": "audit_180b30276a1e4d1f",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": null,
+    "visit_id": null,
+    "action": "register_blocked_consent_withdrawn",
+    "resource_type": "patient",
+    "resource_id": "pat_40079e3860",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:36.046000",
+    "status_code": 403,
+    "audit_status": "failure",
+    "additional_context": {
+      "path": "/patients/register",
+      "method": "POST"
+    }
+  },
+  {
+    "entry_id": "audit_861707e893314360",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": "pat_40079e3860",
+    "visit_id": null,
+    "action": "consent_withdrawn",
+    "resource_type": "consent",
+    "resource_id": "withdrawal_0d4466ec1676",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:35.927000",
+    "status_code": 200,
+    "audit_status": "success",
+    "additional_context": {
+      "path": "/consent/withdraw",
+      "method": "POST",
+      "initiated_by": "doctor"
+    }
+  },
+  {
+    "entry_id": "audit_15eae5da39314792",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": "pat_40079e3860",
+    "visit_id": null,
+    "action": "consent_history_viewed",
+    "resource_type": "consent",
+    "resource_id": "pat_40079e3860",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:35.715000",
+    "status_code": 200,
+    "audit_status": "success",
+    "additional_context": {
+      "path": "/consent/pat_40079e3860/history",
+      "method": "GET"
+    }
+  },
+  {
+    "entry_id": "audit_c5133f89c66940a4",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": null,
+    "visit_id": null,
+    "action": "patients_listed",
+    "resource_type": "patient",
+    "resource_id": "doctor-s2a-e2e2",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:35.549000",
+    "status_code": 200,
+    "audit_status": "success",
+    "additional_context": {
+      "path": "/patients",
+      "method": "GET",
+      "filter": "all"
+    }
+  },
+  {
+    "entry_id": "audit_8ad317206fc340b6",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": "pat_40079e3860",
+    "visit_id": "vis_93fb31a5e7",
+    "action": "consent_captured",
+    "resource_type": "consent",
+    "resource_id": "consent_40f6553ffd06476a",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:35.418000",
+    "status_code": 200,
+    "audit_status": "success",
+    "additional_context": {
+      "path": "/consent/capture",
+      "method": "POST",
+      "status": "accepted"
+    }
+  },
+  {
+    "entry_id": "audit_3ad1bc0b83e24e82",
+    "doctor_id": "doctor-s2a-e2e2",
+    "patient_id": "pat_40079e3860",
+    "visit_id": "vis_93fb31a5e7",
+    "action": "patient_registered",
+    "resource_type": "patient",
+    "resource_id": "pat_40079e3860",
+    "ip_address": "testclient",
+    "user_agent": "testclient",
+    "timestamp": "2026-04-30 23:23:35.138000",
+    "status_code": 200,
+    "audit_status": "success",
+    "additional_context": {
+      "path": "/patients/register",
+      "method": "POST",
+      "workflow_type": "walk_in",
+      "language": "english"
+    }
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "withdrawal_id": "withdrawal_0d4466ec1676",
+    "patient_id": "pat_40079e3860",
+    "doctor_id": "doctor-s2a-e2e2",
+    "original_consent_id": "consent_40f6553ffd06476a",
+    "withdrawal_reason": "Patient requested",
+    "initiated_by": "doctor",
+    "timestamp": "2026-04-30 23:23:35.822000"
+  }
+]

@@ -6,14 +6,14 @@ const config: Config = {
     extend: {
       colors: {
         clinic: {
-          sidebar: "#0f1b3d",
-          sidebarMuted: "#142551",
-          sidebarText: "#c2cce7",
-          primary: "#5b5de6",
-          primaryDark: "#4f51cf",
-          surface: "#f2f4f8",
+          sidebar: "#0f1f3d",
+          sidebarMuted: "#13264b",
+          sidebarText: "#c8d3ea",
+          primary: "#1fa463",
+          primaryDark: "#188a53",
+          surface: "#f5f7fb",
           card: "#ffffff",
-          border: "#e6eaf2",
+          border: "#e4e8ee",
           ink: "#111827",
           muted: "#6b7280",
           success: "#0f9d69",

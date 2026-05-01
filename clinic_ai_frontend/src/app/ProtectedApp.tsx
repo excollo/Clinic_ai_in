@@ -5,6 +5,7 @@ import { queryClient } from "@/lib/queryClient";
 import { ProtectedShell } from "@/components/ProtectedShell";
 
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const RegisterPatientPage = lazy(() => import("@/pages/RegisterPatientPage"));
 const PatientsPage = lazy(() => import("@/pages/PatientsPage"));
 const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
 const PatientDeclinedConsentPage = lazy(() => import("@/pages/PatientDeclinedConsentPage"));
@@ -30,6 +31,7 @@ export default function ProtectedApp() {
         <Routes>
           <Route path="/" element={<ProtectedShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="register-patient" element={<RegisterPatientPage />} />
             <Route path="patients" element={<PatientsPage />} />
             <Route path="patients/:id" element={<PatientDetailPage />} />
             <Route path="consent/:visitId" element={<ConsentPage />} />

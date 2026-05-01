@@ -16,6 +16,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
   const [failedReason, setFailedReason] = useState<string | null>(null);
   const [lastAudioBlob, setLastAudioBlob] = useState<Blob | null>(null);
   const [lastFilename, setLastFilename] = useState<string>("visit-audio.webm");
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -39,14 +40,14 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
       setResult(transcription);
       setState("done");
     } catch (error) {
-      const reason = error instanceof TranscriptionJobError ? error.message : "Unknown error";
+      const reason = error instanceof Error ? error.message : "Unknown error";
       if (error instanceof TranscriptionJobError) {
         console.error("Transcription failed status payload:", error.statusPayload);
       } else {
         console.error(error);
       }
       setFailedReason(reason);
-      toast.error("Transcript processing failed");
+      toast.error(reason || "Transcript processing failed");
       setState("idle");
     }
   };
@@ -91,6 +92,67 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl border border-clinic-border bg-white px-6 py-4 text-base">
+        Upload/record conversation audio here. Once completed, continue to <span className="font-semibold">Clinical Note.</span>
+      </div>
+      <div className="clinic-card space-y-5 p-6">
+        <div>
+          <h3 className="text-3xl font-bold text-[#0f1f3d]">Audio Transcription</h3>
+          <p className="mt-2 text-2xl text-clinic-muted">Upload an audio file or record audio to generate transcription</p>
+        </div>
+        <div className="space-y-3">
+          <p className="text-2xl font-semibold text-[#0f1f3d]">Upload Audio File</p>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-[280px] flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-2xl bg-[#e8effa] px-6 py-3 text-2xl font-medium text-[#1f4fa3]"
+              >
+                Choose File
+              </button>
+              <span className="text-2xl text-[#4f5d75]">{selectedAudioFile?.name || "No file chosen"}</span>
+            </div>
+            <button
+              type="button"
+              disabled={!selectedAudioFile || state === "processing"}
+              onClick={() => selectedAudioFile && runTranscription(selectedAudioFile, selectedAudioFile.name)}
+              className="rounded-2xl bg-[#79d0a6] px-8 py-3 text-2xl font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Upload
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="h-px flex-1 bg-[#d9dfe8]" />
+          <span className="text-lg text-[#7b8798]">OR</span>
+          <div className="h-px flex-1 bg-[#d9dfe8]" />
+        </div>
+        <div className="space-y-3">
+          <p className="text-2xl font-semibold text-[#0f1f3d]">Record Audio</p>
+          {state === "idle" && (
+            <button
+              type="button"
+              onClick={start}
+              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#b9c8dc] bg-white py-4 text-4xl font-medium text-[#1f3558]"
+            >
+              Start Recording
+            </button>
+          )}
+          {state === "recording" && (
+            <button
+              type="button"
+              onClick={stop}
+              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-red-300 bg-red-50 py-4 text-4xl font-medium text-red-700"
+            >
+              Stop Recording
+            </button>
+          )}
+          {(state === "recording" || state === "processing") && (
+            <p className="text-lg text-clinic-muted">Recording time: {mmss}</p>
+          )}
+        </div>
+      </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <select value={noiseEnvironment} onChange={(e) => setNoiseEnvironment(e.target.value)} className="rounded-xl border border-clinic-border bg-white px-3 py-2">
           <option value="moderate_opd">{t("transcription.noiseStandard")}</option>
@@ -103,13 +165,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
           <option value="multilingual">{t("transcription.langMultilingual")}</option>
         </select>
       </div>
-      <div className="clinic-card p-6 text-center">
-        {state === "idle" && <button onClick={start} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-red-500 text-white">{t("transcription.record")}</button>}
-        {state === "recording" && <button onClick={stop} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-red-700 text-white">{t("transcription.stop")}</button>}
-        {(state === "recording" || state === "processing") && <p className="mt-3 text-sm">{mmss}</p>}
-        {(state === "recording" || state === "processing") && <div className="mx-auto mt-3 flex w-40 items-end justify-center gap-1">{Array.from({ length: 7 }).map((_, i) => <span key={i} className="h-6 w-1 animate-pulse rounded bg-indigo-400" />)}</div>}
-        {state === "processing" && <p className="mt-2 text-sm text-clinic-muted">{t("transcription.processing")}</p>}
-      </div>
+      {state === "processing" && <p className="mt-2 text-sm text-clinic-muted">{t("transcription.processing")}</p>}
       {failedReason && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <p>Transcript processing failed.</p>
@@ -133,7 +189,6 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
           </div>
         </div>
       )}
-      <button type="button" onClick={() => fileInputRef.current?.click()} className="text-sm text-clinic-primary">{t("transcription.uploadAudio")}</button>
       <input
         ref={fileInputRef}
         type="file"
@@ -142,7 +197,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (!file) return;
-          void runTranscription(file, file.name);
+          setSelectedAudioFile(file);
           event.currentTarget.value = "";
         }}
       />

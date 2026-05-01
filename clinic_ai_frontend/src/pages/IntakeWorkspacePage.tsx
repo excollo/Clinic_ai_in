@@ -1,78 +1,51 @@
-import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
-import { formatDistanceToNow } from "date-fns";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@/lib/authStore";
-import { fetchDoctorQueue } from "@/lib/services/queueService";
+import { fetchCareprepSessionByVisitId } from "@/lib/services/careprepService";
 
 export default function IntakeWorkspacePage() {
   const { t } = useTranslation();
   const { visitId = "" } = useParams();
-  const navigate = useNavigate();
-  const doctorId = useAuthStore((s) => s.doctorId ?? "");
-  const queueQuery = useQuery({
-    queryKey: ["careprep-queue", doctorId],
-    enabled: Boolean(doctorId),
-    queryFn: () => fetchDoctorQueue(doctorId),
+  const intakeQuery = useQuery({
+    queryKey: ["careprep-session", visitId],
+    enabled: Boolean(visitId),
+    queryFn: () => fetchCareprepSessionByVisitId(visitId),
   });
-  const item = useMemo(
-    () => (queueQuery.data ?? []).find((row) => row.visitId === visitId),
-    [queueQuery.data, visitId],
-  );
 
-  if (!item) {
+  if (!intakeQuery.data) {
     return (
       <div className="rounded-xl border border-dashed border-clinic-border bg-white p-6 text-sm text-clinic-muted">
-        {t("careprep.empty")}
+        {!intakeQuery.isLoading ? t("careprep.empty") : t("common.loading")}
       </div>
     );
   }
 
+  const item = intakeQuery.data;
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-h2">{item.patientName}</h2>
-          <p className="text-sm text-clinic-muted">{item.token} · {item.visitType === "walk_in" ? t("visitWorkspace.walkIn") : t("visitWorkspace.scheduled")} · {item.language} · {formatDistanceToNow(new Date(item.registeredAt), { addSuffix: true })}</p>
-        </div>
-        <button onClick={() => navigate(`/visits/${item.visitId}`)} className="rounded-xl bg-clinic-primary px-4 py-2 text-white">Start consult {"->"}</button>
+      <div>
+        <h2 className="text-h2">Intake Session</h2>
+        <p className="text-sm text-clinic-muted">Visit: {item.visitId} · Status: {item.intakeStatus}</p>
       </div>
-      {item.hasRedFlag && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          <p className="font-semibold">{t("intake.redFlags")}</p>
-          <p>{item.redFlags.join(", ")}. Suggested questions: pain duration, radiation, associated breathlessness.</p>
+      {item.illness && (
+        <div className="clinic-card p-4">
+          <p className="mb-1 text-xs text-clinic-muted">Chief complaint</p>
+          <p className="text-lg font-semibold">{item.illness}</p>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="clinic-card p-4">
-          <p className="mb-1 text-xs text-clinic-muted">{t("previsit.chiefComplaint")}</p>
-          <p className="text-lg font-semibold">{item.chiefComplaint}</p>
-          <p className="mt-3 text-sm"><span className="text-clinic-muted">History:</span> Hypertension, no known allergies.</p>
-          <p className="text-sm"><span className="text-clinic-muted">Other relevant info:</span> Previous similar episode 6 months ago.</p>
-        </div>
-        <div className="clinic-card p-4">
-          <p className="mb-2 text-xs text-clinic-muted">Intake Q&A · {item.language}</p>
-          <div className="max-h-64 space-y-2 overflow-y-auto">
-            {[
-              ["When did symptoms start?", "Since yesterday evening."],
-              ["Any fever?", "No fever."],
-              ["Any known allergy?", "No known allergy."],
-            ].map(([q, a]) => (
-              <div key={q}>
-                <p className="text-xs text-clinic-muted">{q}</p>
-                <p className="text-sm font-medium">{a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
       <div className="clinic-card p-4">
-        <p className="mb-2 text-xs text-clinic-muted">{t("previsit.uploadedImages")}</p>
-        <div className="flex gap-2">
-          {Array.from({ length: Math.max(1, item.imageCount) }).map((_, idx) => (
-            <button key={idx} className="h-16 w-16 rounded-lg bg-slate-100" />
+        <p className="mb-2 text-xs text-clinic-muted">Intake Q&A</p>
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+          {item.questionAnswers.map((qa, idx) => (
+            <div key={`${qa.question}-${idx}`} className="rounded-lg border border-clinic-border p-3">
+              <p className="text-xs text-clinic-muted">{qa.topic || "question"}</p>
+              <p className="text-sm font-medium">{qa.question}</p>
+              <p className="mt-1 text-sm">{qa.answer}</p>
+            </div>
           ))}
+          {item.questionAnswers.length === 0 && (
+            <p className="text-sm text-clinic-muted">No intake responses found.</p>
+          )}
         </div>
       </div>
     </div>

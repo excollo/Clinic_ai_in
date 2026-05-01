@@ -3,7 +3,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search, UserRound, QrCode, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { RegisterPatientModal } from "@/components/RegisterPatientModal";
 import { formatDistanceToNow } from "date-fns";
 import { usePatients } from "@/features/patients/hooks/usePatients";
 
@@ -13,7 +12,6 @@ export default function PatientsPage() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<string[]>(["all"]);
-  const [openRegister, setOpenRegister] = useState(false);
   const sentinel = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -74,7 +72,7 @@ export default function PatientsPage() {
         </div>
         <div className="flex gap-2">
           <button className="rounded-xl border border-clinic-border bg-white px-4 py-2 text-sm"><QrCode className="mr-1 inline h-4 w-4" />{t("patients.scanAbhaQr")}</button>
-          <button onClick={() => setOpenRegister(true)} className="rounded-xl bg-clinic-primary px-4 py-2 text-sm text-white"><Plus className="mr-1 inline h-4 w-4" />{t("patients.registerPatient")}</button>
+          <button onClick={() => navigate("/register-patient")} className="rounded-xl bg-clinic-primary px-4 py-2 text-sm text-white"><Plus className="mr-1 inline h-4 w-4" />{t("patients.registerPatient")}</button>
         </div>
       </div>
 
@@ -104,7 +102,7 @@ export default function PatientsPage() {
             <UserRound className="h-12 w-12 text-slate-300" />
             <p className="text-lg font-semibold">{t("patients.noPatients")}</p>
             <p className="text-sm text-clinic-muted">{t("patients.noPatientsHint")}</p>
-            <button onClick={() => setOpenRegister(true)} className="rounded-xl bg-clinic-primary px-4 py-2 text-white">{t("patients.registerFirst")}</button>
+            <button onClick={() => navigate("/register-patient")} className="rounded-xl bg-clinic-primary px-4 py-2 text-white">{t("patients.registerFirst")}</button>
           </div>
         ) : (
           <div ref={listRef} className="max-h-[70vh] overflow-auto">
@@ -136,7 +134,6 @@ export default function PatientsPage() {
         )}
       </div>
 
-      <RegisterPatientModal open={openRegister} onClose={() => setOpenRegister(false)} />
     </div>
   );
 }

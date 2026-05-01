@@ -46,6 +46,19 @@ function adaptDialogueResponse(dialogue: Array<Record<string, string>>, language
   };
 }
 
+function extractApiErrorMessage(error: unknown): string {
+  const maybe = error as {
+    response?: { data?: { detail?: string; message?: string } };
+    message?: string;
+  };
+  return String(
+    maybe?.response?.data?.detail ||
+      maybe?.response?.data?.message ||
+      maybe?.message ||
+      "transcription failed",
+  );
+}
+
 export async function transcribeVisitAudio(params: {
   patientId: string;
   visitId: string;
@@ -65,9 +78,11 @@ export async function transcribeVisitAudio(params: {
     headers: { "Content-Type": "multipart/form-data" },
   });
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  let lastStatusPayload: unknown = null;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     await delay(2000);
     const statusResponse = await apiClient.get(`/api/notes/transcribe/status/${params.patientId}/${params.visitId}`);
+    lastStatusPayload = statusResponse.data;
     const status = String(statusResponse.data?.status ?? "");
     if (status === "failed") {
       throw new TranscriptionJobError(
@@ -87,5 +102,18 @@ export async function transcribeVisitAudio(params: {
       return adaptDialogueResponse(structured, String(params.languageMix || "en"), transcriptId);
     }
   }
-  throw new Error("transcription timeout");
+  try {
+    const dialogueResponse = await apiClient.get(`/api/notes/${params.patientId}/visits/${params.visitId}/dialogue`);
+    const structured = (dialogueResponse.data?.structured_dialogue ?? []) as Array<Record<string, string>>;
+    if (structured.length > 0) {
+      const transcriptId = String(dialogueResponse.data?.audio_file_path ?? `${params.visitId}-transcript`);
+      return adaptDialogueResponse(structured, String(params.languageMix || "en"), transcriptId);
+    }
+  } catch {
+    // Keep throwing the richer timeout error below.
+  }
+  throw new TranscriptionJobError(
+    `Transcription is taking longer than expected. Please retry in a minute. (${extractApiErrorMessage(lastStatusPayload)})`,
+    lastStatusPayload,
+  );
 }

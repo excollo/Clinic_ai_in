@@ -14,6 +14,24 @@ const RecapTab = lazy(() => import("./visit-workspace/RecapTab"));
 
 const tabOrder: VisitTabKey[] = ["previsit", "vitals", "transcription", "clinical_note", "recap"];
 
+function normalizeSex(value: unknown): "male" | "female" | "other" {
+  const sex = String(value || "").toLowerCase();
+  if (sex === "male" || sex === "m") return "male";
+  if (sex === "female" || sex === "f") return "female";
+  return "other";
+}
+
+function normalizeVisitType(value: unknown): "walk_in" | "scheduled" {
+  return String(value || "").toLowerCase() === "scheduled" ? "scheduled" : "walk_in";
+}
+
+function ageFromDob(dateOfBirth: unknown): number {
+  const raw = String(dateOfBirth || "");
+  const year = Number(raw.slice(0, 4));
+  if (!Number.isFinite(year) || year < 1900) return 0;
+  return Math.max(0, new Date().getFullYear() - year);
+}
+
 export default function VisitWorkspacePage() {
   const { t } = useTranslation();
   const params = useParams();
@@ -29,23 +47,61 @@ export default function VisitWorkspacePage() {
     },
     retry: 0,
   });
+  const visitId = params.visitId ?? "";
+  const visitDetailQuery = useQuery({
+    queryKey: ["visit-detail", visitId],
+    enabled: Boolean(visitId),
+    queryFn: async () => {
+      const response = await apiClient.get(`/api/visits/${visitId}`);
+      return response.data as {
+        id?: string;
+        patient_id?: string;
+        status?: string;
+        visit_type?: string;
+        chief_complaint?: string;
+        patient?: {
+          first_name?: string;
+          last_name?: string;
+          date_of_birth?: string;
+          gender?: string;
+        };
+      };
+    },
+    retry: 0,
+  });
   const current = useMemo(() => {
-    const visitId = params.visitId ?? "";
     const row = (queueQuery.data ?? []).find((item) => String(item.visit_id) === visitId);
-    if (!row) return null;
+    if (row) {
+      return {
+        visitId,
+        patientId: String(row.patient_id ?? ""),
+        patientName: String(row.name ?? "patient"),
+        patientAge: Number(row.age ?? 0),
+        patientSex: normalizeSex(row.sex),
+        tokenNumber: String(row.token_number ?? ""),
+        visitType: normalizeVisitType(row.visit_type),
+        status: (String(row.status ?? "in_consult") === "done" ? "done" : "in_consult") as "in_consult" | "done",
+        chiefComplaint: String(row.chief_complaint ?? ""),
+        patientLanguage: "hindi",
+      };
+    }
+
+    const detail = visitDetailQuery.data;
+    if (!detail) return null;
+    const fullName = [detail.patient?.first_name, detail.patient?.last_name].filter(Boolean).join(" ").trim();
     return {
-      visitId,
-      patientId: String(row.patient_id ?? ""),
-      patientName: String(row.name ?? "patient"),
-      patientAge: Number(row.age ?? 0),
-      patientSex: String(row.sex ?? "other") as "male" | "female" | "other",
-      tokenNumber: String(row.token_number ?? ""),
-      visitType: (String(row.visit_type ?? "walk_in") as "walk_in" | "scheduled"),
-      status: (String(row.status ?? "in_consult") === "done" ? "done" : "in_consult") as "in_consult" | "done",
-      chiefComplaint: String(row.chief_complaint ?? ""),
+      visitId: String(detail.id || visitId),
+      patientId: String(detail.patient_id || ""),
+      patientName: fullName || "patient",
+      patientAge: ageFromDob(detail.patient?.date_of_birth),
+      patientSex: normalizeSex(detail.patient?.gender),
+      tokenNumber: "-",
+      visitType: normalizeVisitType(detail.visit_type),
+      status: (String(detail.status || "in_consult").toLowerCase() === "done" ? "done" : "in_consult") as "in_consult" | "done",
+      chiefComplaint: String(detail.chief_complaint || ""),
       patientLanguage: "hindi",
     };
-  }, [params.visitId, queueQuery.data]);
+  }, [queueQuery.data, visitDetailQuery.data, visitId]);
 
   useEffect(() => {
     if (!current) return;
@@ -69,7 +125,7 @@ export default function VisitWorkspacePage() {
   if (!current) {
     return (
       <div className="rounded-xl border border-dashed border-clinic-border bg-white p-6 text-sm text-clinic-muted">
-        Visit not found in live queue.
+        {queueQuery.isLoading || visitDetailQuery.isLoading ? t("common.loading") : "Visit not found."}
       </div>
     );
   }

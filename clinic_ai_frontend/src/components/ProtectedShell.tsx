@@ -6,7 +6,6 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import apiClient from "@/lib/apiClient";
 import { useAuthStore } from "@/lib/authStore";
-import { RegisterPatientModal } from "./RegisterPatientModal";
 import { GlobalSearchOverlay } from "./GlobalSearchOverlay";
 import { ShortcutHelpModal } from "./ShortcutHelpModal";
 import { ClinicLogo } from "./ClinicLogo";
@@ -59,7 +58,6 @@ export function ProtectedShell() {
   const navigate = useNavigate();
   const clear = useAuthStore((s) => s.clearSession);
   const doctorName = useAuthStore((s) => s.doctorName ?? t("common.doctor"));
-  const [registerOpen, setRegisterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const health = useBackendHealth();
@@ -106,7 +104,7 @@ export function ProtectedShell() {
       }
       if (cmd && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        setRegisterOpen(true);
+        navigate("/register-patient");
       }
       if (cmd && e.key === "/") {
         e.preventDefault();
@@ -114,13 +112,12 @@ export function ProtectedShell() {
       }
       if (e.key === "escape") {
         setSearchOpen(false);
-        setRegisterOpen(false);
         setShortcutsOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     console.info("[TOPBAR] unsynced count updated:", unsynced.data ?? 0);
@@ -163,7 +160,6 @@ export function ProtectedShell() {
         )}
         <Outlet />
       </main>
-      <RegisterPatientModal open={registerOpen} onClose={() => setRegisterOpen(false)} />
       <GlobalSearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
       <ShortcutHelpModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
