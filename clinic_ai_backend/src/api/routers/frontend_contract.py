@@ -38,6 +38,7 @@ from src.api.schemas.frontend_contract import (
 )
 from src.core.auth import hash_password, verify_password
 from src.core.config import get_settings
+from src.application.services.intake_chat_service import IntakeChatService
 from jose import jwt
 
 logger = logging.getLogger(__name__)
@@ -601,6 +602,7 @@ def patients_register(
     patient_id = str(existing_patient.get("patient_id")) if existing_patient else f"pat_{uuid4().hex[:10]}"
     visit_id = f"vis_{uuid4().hex[:10]}"
     token_number = None
+    whatsapp_triggered = False
     now = datetime.now(timezone.utc)
     if existing_patient:
         db.patients.update_one(
@@ -661,6 +663,23 @@ def patients_register(
             "updated_at": now,
         }
     )
+    # Auto-trigger WhatsApp intake for scheduled appointments unless explicitly in-clinic.
+    if body.workflow_type == "scheduled" and body.intake_mode != "in_clinic":
+        if body.mobile:
+            try:
+                IntakeChatService().start_intake(
+                    patient_id=patient_id,
+                    visit_id=visit_id,
+                    to_number=body.mobile,
+                    language=str(body.language or "en"),
+                )
+                whatsapp_triggered = True
+            except Exception:
+                logger.exception(
+                    "scheduled_registration_intake_trigger_failed patient_id=%s visit_id=%s",
+                    patient_id,
+                    visit_id,
+                )
     _set_audit_state(
         request,
         action="patient_registered",
@@ -670,7 +689,13 @@ def patients_register(
         visit_id=visit_id,
         context={"workflow_type": body.workflow_type, "language": body.language},
     )
-    return {"patient_id": patient_id, "visit_id": visit_id, "token_number": token_number, "consent_required": True}
+    return {
+        "patient_id": patient_id,
+        "visit_id": visit_id,
+        "token_number": token_number,
+        "consent_required": True,
+        "whatsapp_triggered": whatsapp_triggered,
+    }
 
 
 @router.get("/patients")

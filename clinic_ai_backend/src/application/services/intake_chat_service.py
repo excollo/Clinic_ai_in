@@ -938,7 +938,11 @@ class IntakeChatService:
     @staticmethod
     def _normalize_phone_number(phone_number: str) -> str:
         """Normalize phone number for reliable matching across webhook/provider formats."""
-        return "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+        digits = "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+        # For Indian numbers entered as 10 digits, force E.164-compatible country code.
+        if len(digits) == 10 and digits[:1] in {"6", "7", "8", "9"}:
+            return f"91{digits}"
+        return digits
 
     @classmethod
     def _phone_numbers_match(cls, stored_number: str, incoming_number: str) -> bool:
