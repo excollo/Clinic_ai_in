@@ -108,7 +108,7 @@ async def upload_transcription_audio(
     audio_id = str(uuid4())
     job_id = str(uuid4())
     safe_name = Path(audio_file.filename or "recording").name or "recording"
-    storage_adapter = await get_audio_storage_adapter()
+    storage_adapter = get_audio_storage_adapter()
     storage_ref = await storage_adapter.upload(
         payload,
         safe_name,
@@ -148,7 +148,7 @@ async def upload_transcription_audio(
         speaker_mode=speaker_mode,
         max_retries=settings.transcription_max_retries,
     )
-    await get_queue_adapter().enqueue(
+    queue_message_id = await get_queue_adapter().enqueue(
         TranscriptionQueueJob(
             job_id=job_id,
             audio_storage_ref=storage_ref,
@@ -157,6 +157,7 @@ async def upload_transcription_audio(
             queued_at=now,
         )
     )
+    db.transcription_jobs.update_one({"job_id": job_id}, {"$set": {"queue_message_id": queue_message_id}})
     _set_audit_state(
         request,
         action="transcription_upload_queued",

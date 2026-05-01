@@ -21,6 +21,7 @@ class AudioRepository:
         self.audio_files = self.db.audio_files
         self.transcription_jobs = self.db.transcription_jobs
         self.transcription_results = self.db.transcription_results
+        self.audio_signed_url_redemptions = self.db.audio_signed_url_redemptions
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
@@ -28,6 +29,11 @@ class AudioRepository:
         self.transcription_jobs.create_index([("job_id", ASCENDING)], unique=True)
         self.transcription_jobs.create_index([("patient_id", ASCENDING), ("created_at", DESCENDING)])
         self.transcription_jobs.create_index([("visit_id", ASCENDING), ("created_at", DESCENDING)])
+        self.transcription_jobs.create_index([("audio_id", ASCENDING), ("updated_at", DESCENDING)])
+        self.audio_signed_url_redemptions.create_index([("fingerprint", ASCENDING)], unique=True)
+        self.audio_signed_url_redemptions.create_index(
+            [("redeemed_at", ASCENDING)], expireAfterSeconds=172800  # docs auto-delete after ~48h
+        )
 
     def create_audio_file(self, **kwargs: object) -> dict:
         doc = build_audio_doc(**kwargs)

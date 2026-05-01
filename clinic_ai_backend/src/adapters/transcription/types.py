@@ -24,4 +24,6 @@ class DequeuedJob:
     """Result of dequeue: payload plus opaque acknowledgement handle for cloud queues."""
 
     job: TranscriptionQueueJob
+    message_id: str = ""
     receipt: str = ""
+    dequeue_count: int = 1

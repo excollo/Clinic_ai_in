@@ -17,10 +17,9 @@ def get_queue_adapter() -> TranscriptionQueuePort:
     if backend == "mongo":
         return MongoFifoQueueAdapter()
     if backend == "azure":
-        raise ConfigurationError(
-            "TRANSCRIPTION_QUEUE_BACKEND=azure is configured but the Azure Queue adapter "
-            "ships in Sprint 2B Chunk 1. Use TRANSCRIPTION_QUEUE_BACKEND=mongo until then."
-        )
+        from src.adapters.transcription.queue.azure_queue_adapter import AzureQueueAdapter
+
+        return AzureQueueAdapter()
     raise ConfigurationError(f"Unknown TRANSCRIPTION_QUEUE_BACKEND={backend!r}")
 
 

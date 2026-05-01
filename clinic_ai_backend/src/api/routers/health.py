@@ -5,6 +5,7 @@ import socket
 from fastapi import APIRouter
 
 from src.adapters.db.mongo.client import get_database
+from src.adapters.transcription.factory import get_queue_adapter
 from src.core.config import get_settings
 
 router = APIRouter(prefix="/health", tags=["Health"])
@@ -39,6 +40,13 @@ def _check_azure_queue() -> str:
     settings = get_settings()
     if not settings.azure_queue_connection_string or not settings.azure_queue_name or not settings.azure_queue_poison_name:
         return "not_configured"
+    if settings.transcription_queue_backend == "azure":
+        try:
+            adapter = get_queue_adapter()
+            adapter.queue.get_queue_properties()  # type: ignore[attr-defined]
+            return "reachable"
+        except Exception:
+            return "unreachable"
     return "configured"
 
 

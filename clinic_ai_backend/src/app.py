@@ -14,6 +14,7 @@ from src.api.routers import (
     frontend_contract,
     followthrough,
     health,
+    internal_audio,
     notes,
     patient_chat,
     patients,
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.add_middleware(DPDPAuditMiddleware)
     app.include_router(auth.router)
     app.include_router(health.router)
+    app.include_router(internal_audio.router)
     app.include_router(patients.router)
     app.include_router(vitals.router)
     app.include_router(whatsapp.router)

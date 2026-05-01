@@ -126,11 +126,16 @@ class Settings:
             os.getenv("TRANSCRIPTION_WORKER_DEAD_AFTER_SEC", "90")
         )
         self.transcription_worker_id: str = os.getenv("TRANSCRIPTION_WORKER_ID", "clinic-ai-worker")
+        # Public base URL used for Azure Speech batch to fetch audio (no trailing slash required).
+        self.public_backend_url: str = (os.getenv("PUBLIC_BACKEND_URL", "") or "").strip()
+        # HMAC secret for self-hosted signed URLs to /internal/audio; min 32 chars when generating/using URLs.
+        self.audio_url_signing_secret: str = os.getenv("AUDIO_URL_SIGNING_SECRET", "") or ""
         self.run_transcription_workers_in_api: bool = (
             os.getenv("RUN_TRANSCRIPTION_WORKERS_IN_API", "false").lower() == "true"
         )
         self.use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"
         self.local_audio_storage_path: str = os.getenv("LOCAL_AUDIO_STORAGE_PATH", "/tmp/clinic_audio")
+        self.allow_local_audio_fallback: bool = os.getenv("ALLOW_LOCAL_AUDIO_FALLBACK", "false").lower() == "true"
         self.mongo_audio_bucket_name: str = os.getenv("MONGO_AUDIO_BUCKET_NAME", "audio_blobs")
         self.default_note_type: str = os.getenv("DEFAULT_NOTE_TYPE", "india_clinical")
         self.encryption_key: str = os.getenv("ENCRYPTION_KEY", "")

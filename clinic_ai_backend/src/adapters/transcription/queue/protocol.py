@@ -16,7 +16,7 @@ class TranscriptionQueuePort(Protocol):
     async def acknowledge(self, job_id: str, receipt: str) -> None:
         """Mark the message consumed (noop for destructive Mongo dequeue)."""
 
-    async def move_to_poison(self, job_id: str, reason: str) -> None:
+    async def move_to_poison(self, job_id: str, reason: str, receipt: str = "") -> None:
         """Park a failed record for ops review."""
 
     async def get_queue_depth(self) -> int:

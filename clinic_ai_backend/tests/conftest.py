@@ -204,6 +204,7 @@ def force_azure_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = config_module.get_settings()
     settings.use_local_adapters = False
     settings.azure_speech_key = settings.azure_speech_key or "test-azure-key"
+    settings.allow_local_audio_fallback = True
     monkeypatch.setattr("src.core.config.get_settings", lambda: settings)
 
 

@@ -42,7 +42,7 @@ class MongoFifoQueueAdapter:
     async def acknowledge(self, job_id: str, receipt: str) -> None:  # noqa: ARG002
         return None
 
-    async def move_to_poison(self, job_id: str, reason: str) -> None:
+    async def move_to_poison(self, job_id: str, reason: str, receipt: str = "") -> None:  # noqa: ARG002
         db = get_database()
 
         def _sync_ins() -> None:

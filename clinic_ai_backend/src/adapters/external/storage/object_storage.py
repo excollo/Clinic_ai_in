@@ -11,6 +11,7 @@ from pymongo.database import Database
 
 from src.adapters.db.mongo.client import get_database
 from src.core.config import get_settings
+from src.core.errors import StorageError
 
 
 class TranscriptionAudioStore:
@@ -46,6 +47,14 @@ class TranscriptionAudioStore:
                 metadata={"mime_type": mime_type, "logical_path": blob_path},
             )
             return f"gridfs://{file_id}"
+
+        if not self.settings.allow_local_audio_fallback:
+            raise StorageError(
+                "GridFS unavailable and local fallback is disabled. "
+                "On Render, audio must persist to durable storage. "
+                "Verify MongoDB connection or set ALLOW_LOCAL_AUDIO_FALLBACK=true "
+                "for local development only."
+            )
 
         base = Path(self.settings.local_audio_storage_path)
         base.mkdir(parents=True, exist_ok=True)

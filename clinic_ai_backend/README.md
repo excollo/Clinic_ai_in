@@ -33,6 +33,10 @@ make api
 | MAX_AUDIO_SIZE_MB | No | Max upload size in MB | 25 |
 | TRANSCRIPTION_MAX_RETRIES | No | Retry attempts for failed jobs | 3 |
 | TRANSCRIPTION_TIMEOUT_SEC | No | Worker timeout per transcription call | 120 |
+| TRANSCRIPTION_QUEUE_BACKEND | No | `mongo` (default Mongo FIFO queue) or `azure` (**dormant** Azure Queue adapter; pilot uses mongo) | mongo |
+| TRANSCRIPTION_STORAGE_BACKEND | No | `gridfs` (default); `azure_blob` adapter reserved/future (**not pilot**) | gridfs |
+| PUBLIC_BACKEND_URL | When batch Speech needs a fetch URL | Public HTTPS origin of this API (**no trailing slash**). Azure Speech batch calls `GET /internal/audio/{audio_id}?token=...` against this host. Example: `https://your-backend.onrender.com` | _(empty)_ |
+| AUDIO_URL_SIGNING_SECRET | Same as above | HMAC secret (**≥32** characters) protecting signed `/internal/audio` URLs | _(empty)_ |
 | USE_LOCAL_ADAPTERS | No | If true: asyncio in-process transcription queue + temp files for audio when DB is not PyMongo | true |
 | LOCAL_AUDIO_STORAGE_PATH | No | Directory for temp transcription audio (non-GridFS / local adapters) | /tmp/clinic_audio |
 | MONGO_AUDIO_BUCKET_NAME | No | GridFS bucket name (Render + real MongoDB) | audio_blobs |
@@ -82,9 +86,10 @@ make api
 - Error reason distribution: monitor `last_fallback_reason` (for example `openai_http_error`, `json_parse_error`, `schema_invalid`, `message_invalid`, `topic_mismatch`, `unknown_exception`).
 
 ## Doctor transcription (upload → poll → dialogue)
-- **Queue**: MongoDB collection `transcription_queue` (FIFO), or an in-process `asyncio` queue when `USE_LOCAL_ADAPTERS=true`. **Not** Azure Storage Queue.
-- **Audio**: Uploaded bytes go to **MongoDB GridFS** when the app uses a normal PyMongo `Database` (e.g. Render + Atlas). **No Azure Blob**. For local/tests with an in-memory DB stub, bytes are written under `LOCAL_AUDIO_STORAGE_PATH` as `file://` references.
-- **Azure Speech**: Short-audio REST API with **raw POST body bytes** (no SAS / cloud storage URL).
+- **Queue**: MongoDB FIFO (`TRANSCRIPTION_QUEUE_BACKEND=mongo` default). An **Azure Queue** adapter exists (`azure`) but the pilot keeps it dormant; optional Azurite tests remain for future scale (`RUN_AZURITE_TESTS=true`).
+- **Audio**: **GridFS** on real Mongo (`TRANSCRIPTION_STORAGE_BACKEND=gridfs`). Pilot does **not** use Azure Blob. Local/dev stubs may persist under `LOCAL_AUDIO_STORAGE_PATH` when `ALLOW_LOCAL_AUDIO_FALLBACK=true`.
+- **Azure Speech (current worker)**: Short-audio REST with **HTTP POST bodies** chunked by the worker (**no SAS URL yet**).
+- **Azure Speech (batch rollout, Sprint 2B Chunk 3)**: Requires a **world-readable HTTPS URL** for Azure to pull WAV/MP3. Chunk 2 implements **`GET /internal/audio/{audio_id}?token=...`** minted via `PUBLIC_BACKEND_URL` + `AUDIO_URL_SIGNING_SECRET`; see `docs/deployment-azure-speech.md` and **`TECH_DEBT.md`** on Render idle-sleep risks.
 
 ## Azure Speech and MP3 uploads
 Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants decode to “success” with an empty transcript. The worker **normalizes uploads with FFmpeg** to 16 kHz mono PCM WAV before calling Azure when `ffmpeg` is on `PATH`.
@@ -97,6 +102,7 @@ Transcription sends audio to Azure’s short-audio REST API. Some MP3 variants d
 - Patients: `src/api/routers/patients.py`
 - Notes: `src/api/routers/notes.py`
 - Transcription: `src/api/routers/transcription.py`
+- Internal Azure batch fetch: `src/api/routers/internal_audio.py` (`/internal/audio/...`)
 - Vitals: `src/api/routers/vitals.py`
 - WhatsApp: `src/api/routers/whatsapp.py`
 - Workflow: `src/api/routers/workflow.py`
