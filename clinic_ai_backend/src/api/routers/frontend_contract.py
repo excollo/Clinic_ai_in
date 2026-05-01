@@ -673,7 +673,19 @@ def patients_list(
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
     db = get_database()
-    rows = list(db.patients.find({"doctor_id": doctor_id}, {"_id": 0}))
+    rows = list(
+        db.patients.find(
+            {
+                "$or": [
+                    {"doctor_id": doctor_id},
+                    {"doctor_id": ""},
+                    {"doctor_id": None},
+                    {"doctor_id": {"$exists": False}},
+                ]
+            },
+            {"_id": 0},
+        )
+    )
     if search.strip():
         q = search.strip().lower()
         rows = [r for r in rows if q in str(r.get("name", "")).lower() or q in str(r.get("mobile", ""))]
@@ -1091,7 +1103,16 @@ def doctor_queue(
     now = datetime.now(timezone.utc)
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     all_today = []
-    for v in db.visits.find({"doctor_id": doctor_id}, {"_id": 0}):
+    visit_query = {
+        "$or": [
+            {"doctor_id": doctor_id},
+            {"provider_id": doctor_id},
+            {"doctor_id": ""},
+            {"doctor_id": None},
+            {"doctor_id": {"$exists": False}},
+        ]
+    }
+    for v in db.visits.find(visit_query, {"_id": 0}):
         created_at = _as_utc_datetime(v.get("created_at"))
         if created_at and created_at >= start_of_day:
             all_today.append(v)

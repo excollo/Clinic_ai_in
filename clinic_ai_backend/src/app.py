@@ -30,6 +30,28 @@ from src.core.config import get_settings
 from src.workers.transcription_worker import start_background_workers, stop_background_workers
 
 
+def _build_cors_origins() -> list[str]:
+    """Merge configured origins with safe local-development defaults."""
+    configured = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    # Keep localhost/loopback available for local frontend testing even when
+    # Render env sets CORS_ORIGINS to production domains only.
+    dev_defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
+    merged: list[str] = []
+    for origin in [*configured, *dev_defaults]:
+        if origin not in merged:
+            merged.append(origin)
+    return merged
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Start/stop background transcription workers with app lifecycle."""
@@ -46,11 +68,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(title="Clinic AI India Backend", version="0.1.0", lifespan=lifespan)
-    cors_origins = [
-        origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
-        if origin.strip()
-    ]
+    cors_origins = _build_cors_origins()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

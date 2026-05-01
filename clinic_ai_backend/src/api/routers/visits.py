@@ -218,8 +218,6 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                     {"provider_id": None},
                     {"provider_id": {"$exists": False}},
                 ],
-                # Queue/board UI only cares about items with an appointment time fixed.
-                "scheduled_start": {"$exists": True, "$ne": None, "$ne": ""},
             },
             {
                 "_id": 0,
@@ -227,12 +225,16 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                 "visit_id": 1,
                 "id": 1,
                 "scheduled_start": 1,
+                "scheduled_date": 1,
+                "scheduled_time": 1,
                 "visit_type": 1,
+                "workflow_type": 1,
                 "status": 1,
                 "chief_complaint": 1,
+                "created_at": 1,
             },
         )
-        .sort("scheduled_start", 1)
+        .sort("created_at", -1)
         .limit(UPCOMING_LIMIT)
     )
 
@@ -281,6 +283,35 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                     intake_reason_by_visit[vid] = str(answer.get("answer"))
                     break
 
+    def _derive_scheduled_start(visit: dict) -> str | None:
+        scheduled_start = visit.get("scheduled_start")
+        if isinstance(scheduled_start, datetime):
+            return scheduled_start.isoformat()
+        if isinstance(scheduled_start, str) and scheduled_start.strip():
+            return scheduled_start.strip()
+
+        # Legacy register flow stores date/time split instead of scheduled_start.
+        date_part = str(visit.get("scheduled_date") or "").strip()
+        time_part = str(visit.get("scheduled_time") or "").strip()
+        if date_part:
+            try:
+                hour = 9
+                minute = 0
+                if time_part:
+                    hh, mm = time_part.split(":")
+                    hour, minute = int(hh), int(mm)
+                dt = datetime.fromisoformat(f"{date_part}T{hour:02d}:{minute:02d}:00+00:00")
+                return dt.isoformat()
+            except Exception:
+                pass
+
+        created_at = visit.get("created_at")
+        if isinstance(created_at, datetime):
+            return created_at.isoformat()
+        if isinstance(created_at, str) and created_at.strip():
+            return created_at.strip()
+        return None
+
     appointments: list[dict] = []
     for visit in records:
         patient_id = str(visit.get("patient_id") or "")
@@ -289,7 +320,9 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
             continue
         patient = patient_map.get(patient_id, {})
         patient_name = (patient.get("name") or "").strip() or "Unknown Patient"
-        scheduled_start = visit.get("scheduled_start")
+        scheduled_start = _derive_scheduled_start(visit)
+        if not scheduled_start:
+            continue
         chief_complaint = (
             visit.get("chief_complaint")
             or previsit_reason_by_visit.get(resolved_visit_id)
@@ -302,13 +335,14 @@ def list_provider_upcoming_visits(provider_id: str) -> dict:
                 "patient_name": patient_name,
                 "scheduled_start": scheduled_start,
                 "chief_complaint": chief_complaint or "Visit",
-                "appointment_type": visit.get("visit_type") or "visit",
+                "appointment_type": visit.get("visit_type") or visit.get("workflow_type") or "visit",
                 "previsit_completed": False,
                 "visit_id": resolved_visit_id,
                 "status": str(visit.get("status") or "open"),
             }
         )
 
+    appointments.sort(key=lambda item: str(item.get("scheduled_start") or ""))
     return {"appointments": appointments}
 
 
