@@ -88,6 +88,13 @@ export function RegisterPatientModal({
       scheduled_time: values.schedule_time,
     });
     toast.success(t("registration.registered"));
+    if (workflow === "scheduled") {
+      if (res.whatsapp_triggered) {
+        toast.success("WhatsApp intake triggered.");
+      } else {
+        toast.warning("Appointment created, but WhatsApp intake was not triggered.");
+      }
+    }
     onRegistered?.();
     onClose();
     navigate(`/consent/${res.visit_id}`, { state: { ...res, patientName: values.name, patientLanguage: values.preferred_language, visitType: workflow } });

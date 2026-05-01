@@ -1,4 +1,4 @@
-import type { PatientRecord } from "@/lib/mocks/patients";
+import type { PatientRecord } from "@/features/patients/hooks/usePatients";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";

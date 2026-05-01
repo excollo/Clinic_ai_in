@@ -2,13 +2,32 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
-import { getCareprepByVisitId } from "@/lib/mocks/careprep";
+import { useQuery } from "@tanstack/react-query";
+import { useAuthStore } from "@/lib/authStore";
+import { fetchDoctorQueue } from "@/lib/services/queueService";
 
 export default function IntakeWorkspacePage() {
   const { t } = useTranslation();
   const { visitId = "" } = useParams();
   const navigate = useNavigate();
-  const item = useMemo(() => getCareprepByVisitId(visitId), [visitId]);
+  const doctorId = useAuthStore((s) => s.doctorId ?? "");
+  const queueQuery = useQuery({
+    queryKey: ["careprep-queue", doctorId],
+    enabled: Boolean(doctorId),
+    queryFn: () => fetchDoctorQueue(doctorId),
+  });
+  const item = useMemo(
+    () => (queueQuery.data ?? []).find((row) => row.visitId === visitId),
+    [queueQuery.data, visitId],
+  );
+
+  if (!item) {
+    return (
+      <div className="rounded-xl border border-dashed border-clinic-border bg-white p-6 text-sm text-clinic-muted">
+        {t("careprep.empty")}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

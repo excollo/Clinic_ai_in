@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "@/lib/authStore";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
-import { fetchCareprepQueue } from "@/lib/mocks/careprep";
 import { fetchPatientsPageReal } from "@/features/patients/hooks/usePatients";
 import apiClient from "@/lib/apiClient";
 
@@ -37,8 +36,6 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    void queryClient.prefetchQuery({ queryKey: ["queue"], queryFn: fetchCareprepQueue });
-    void queryClient.prefetchQuery({ queryKey: ["careprep-list"], queryFn: fetchCareprepQueue });
     void queryClient.prefetchQuery({
       queryKey: ["recent-patients"],
       queryFn: () => fetchPatientsPageReal({ offset: 0, limit: 20, search: "", filters: ["all"] }),

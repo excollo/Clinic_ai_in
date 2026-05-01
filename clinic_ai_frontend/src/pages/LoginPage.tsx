@@ -1,8 +1,9 @@
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/lib/authStore";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { isValidIndianMobile } from "@/lib/format";
@@ -14,7 +15,20 @@ export default function LoginPage() {
   const { t } = useTranslation();
   useDocumentTitle(`Sign in · ${t("common.brand")}`);
   const navigate = useNavigate();
+  const location = useLocation();
   const setSession = useAuthStore((s) => s.setSession);
+  const fromSignupState = (location.state as { mobile?: string; password?: string; fromSignup?: boolean } | undefined) ?? {};
+  const sessionPrefill = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("clinic_signup_prefill") || "{}") as { mobile?: string; password?: string };
+    } catch {
+      return {};
+    }
+  })();
+  const prefill = {
+    mobile: fromSignupState.mobile || sessionPrefill.mobile || "",
+    password: fromSignupState.password || sessionPrefill.password || "",
+  };
   const schema = z.object({
     mobile: z.string().refine(isValidIndianMobile, t("auth.mobileValidation")),
     password: z.string().min(8, t("auth.requiredField")),
@@ -22,8 +36,13 @@ export default function LoginPage() {
   const { handleSubmit, setValue, watch, register, formState: { errors, isSubmitting } } = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     mode: "onBlur",
-    defaultValues: { mobile: "", password: "" },
+    defaultValues: prefill,
   });
+  useEffect(() => {
+    if (fromSignupState.fromSignup) {
+      toast.success(t("auth.accountCreatedLogin"));
+    }
+  }, [fromSignupState.fromSignup, t]);
   const mobile = watch("mobile");
   const prefetchDashboard = () => {
     void import("@/pages/DashboardPage");
@@ -38,8 +57,23 @@ export default function LoginPage() {
         doctorName: response.doctor_name,
         mobile: data.mobile,
       });
+      sessionStorage.removeItem("clinic_signup_prefill");
       navigate("/dashboard");
     } catch {
+      // Clear sensitive prefilled password after first failed attempt.
+      setValue("password", "", { shouldValidate: true, shouldDirty: true });
+      const prefillRaw = sessionStorage.getItem("clinic_signup_prefill");
+      if (prefillRaw) {
+        try {
+          const parsed = JSON.parse(prefillRaw) as { mobile?: string; doctorName?: string };
+          sessionStorage.setItem(
+            "clinic_signup_prefill",
+            JSON.stringify({ mobile: parsed.mobile || "", doctorName: parsed.doctorName || "" }),
+          );
+        } catch {
+          sessionStorage.removeItem("clinic_signup_prefill");
+        }
+      }
       toast.error(t("auth.otpInvalid"));
     }
   };

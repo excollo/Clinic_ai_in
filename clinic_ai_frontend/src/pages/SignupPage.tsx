@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
-import { useAuthStore } from "@/lib/authStore";
 import { useAuthFlowStore } from "@/lib/authFlowStore";
 import { sendOtp, signupDoctor } from "@/lib/mocks/auth";
 import { AuthCard, Field, MobileInput, OtpInput } from "@/features/auth/components";
@@ -12,48 +12,77 @@ export default function SignupPage() {
   const { t } = useTranslation();
   useDocumentTitle(`Sign up · ${t("common.brand")}`);
   const navigate = useNavigate();
-  const setSession = useAuthStore((s) => s.setSession);
   const { signup, updateSignup } = useAuthFlowStore();
   const resetSignup = useAuthFlowStore((s) => s.resetSignup);
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [otpRequestId, setOtpRequestId] = useState(signup.otpRequestId);
   const form = useForm({ mode: "onBlur", defaultValues: signup });
-  const values = form.watch();
-  useEffect(() => { updateSignup(values); }, [values, updateSignup]);
 
   const sendSignupOtp = async () => {
-    const res = await sendOtp(signup.mobile);
+    const values = form.getValues();
+    const mobile = values.mobile || signup.mobile;
+    const res = await sendOtp(mobile);
     setOtpRequestId(res.request_id);
-    updateSignup({ otpRequestId: res.request_id });
+    updateSignup({
+      fullName: values.fullName || signup.fullName,
+      mobile,
+      email: values.email || signup.email,
+      regNo: values.regNo || signup.regNo,
+      specialty: values.specialty || signup.specialty,
+      password: values.password || signup.password,
+      otpRequestId: res.request_id,
+    });
     setStep(2);
   };
   const finishSignup = async () => {
-    const response = await signupDoctor({
-      name: signup.fullName,
-      mobile: signup.mobile,
-      email: signup.email || undefined,
-      mci_number: signup.regNo,
-      specialty: signup.specialty,
-      password: signup.password,
-      clinic_name: signup.clinicName,
-      city: signup.city,
-      pincode: signup.pincode,
-      opd_hours: { start: signup.opdStart, end: signup.opdEnd },
-      languages: signup.languages,
-      token_prefix: signup.tokenPrefix || "OPD-",
-      abdm_hfr_id: signup.hfrId || undefined,
-      whatsapp_mode: signup.whatsappChoice,
-    });
-    if (response?.token && response?.doctor_id) {
-      setSession({
-        apiKey: response.token,
-        doctorId: response.doctor_id,
-        doctorName: signup.fullName,
-        mobile: signup.mobile,
+    try {
+      const values = form.getValues();
+      const draft = {
+        ...signup,
+        ...values,
+      };
+      if (draft.hasEveningShift && (!draft.eveningStart || !draft.eveningEnd)) {
+        toast.error(t("auth.requiredField"));
+        return;
+      }
+      const shifts = [
+        { name: "morning", start: draft.opdStart, end: draft.opdEnd },
+        ...(draft.hasEveningShift ? [{ name: "evening", start: draft.eveningStart, end: draft.eveningEnd }] : []),
+      ];
+      const response = await signupDoctor({
+        name: draft.fullName,
+        mobile: draft.mobile,
+        email: draft.email || undefined,
+        mci_number: draft.regNo,
+        specialty: draft.specialty,
+        password: draft.password,
+        clinic_name: draft.clinicName,
+        city: draft.city,
+        pincode: draft.pincode,
+        opd_hours: {
+          start: draft.opdStart,
+          end: draft.opdEnd,
+          morning: { start: draft.opdStart, end: draft.opdEnd },
+          evening: draft.hasEveningShift ? { start: draft.eveningStart, end: draft.eveningEnd } : undefined,
+          shifts,
+        },
+        languages: draft.languages,
+        token_prefix: draft.tokenPrefix || "OPD-",
+        abdm_hfr_id: draft.hfrId || undefined,
+        whatsapp_mode: draft.whatsappChoice,
       });
+      if (response?.doctor_id) {
+        sessionStorage.setItem(
+          "clinic_signup_prefill",
+          JSON.stringify({ mobile: draft.mobile, password: draft.password, doctorName: draft.fullName }),
+        );
+      }
+      resetSignup();
+      toast.success(t("auth.accountCreatedLogin"));
+      navigate("/login", { state: { mobile: draft.mobile, password: draft.password, fromSignup: true } });
+    } catch {
+      toast.error(t("common.error"));
     }
-    resetSignup();
-    navigate("/welcome-tour");
   };
   useEffect(() => {
     if (step === 5) {
@@ -89,6 +118,24 @@ export default function SignupPage() {
             <Field label={t("auth.opdStart")} required><input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("opdStart", { required: true })} /></Field>
             <Field label={t("auth.opdEnd")} required><input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("opdEnd", { required: true })} /></Field>
           </div>
+          <label className="flex items-center gap-2 rounded-xl border border-clinic-border px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(form.watch("hasEveningShift"))}
+              onChange={(e) => form.setValue("hasEveningShift", e.target.checked)}
+            />
+            {t("auth.secondShift")}
+          </label>
+          {form.watch("hasEveningShift") && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t("auth.eveningStart")} required>
+                <input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("eveningStart", { required: true })} />
+              </Field>
+              <Field label={t("auth.eveningEnd")} required>
+                <input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("eveningEnd", { required: true })} />
+              </Field>
+            </div>
+          )}
           <Field label={t("auth.tokenPrefix")} required><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("tokenPrefix", { required: true })} /></Field>
           <div className="flex justify-between"><button type="button" className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(2)}>{t("common.back")}</button><button className="rounded-xl bg-clinic-primary px-4 py-2 text-white">{t("common.continue")}</button></div>
         </form>
@@ -99,9 +146,9 @@ export default function SignupPage() {
           <Field label={t("auth.hfrId")}><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" value={signup.hfrId} onChange={(e) => updateSignup({ hfrId: e.target.value })} /></Field>
           <p className="text-xs text-clinic-muted">{t("auth.abdmApplyHint")}</p>
           <div className="flex justify-between gap-2">
-            <button className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(3)}>{t("common.back")}</button>
-            <button className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(5)}>{t("auth.skipForNow")}</button>
-            <button className="rounded-xl bg-clinic-primary px-4 py-2 text-white" onClick={() => setStep(5)}>{t("auth.link")}</button>
+            <button type="button" className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(3)}>{t("common.back")}</button>
+            <button type="button" className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(5)}>{t("auth.skipForNow")}</button>
+            <button type="button" className="rounded-xl bg-clinic-primary px-4 py-2 text-white" onClick={() => setStep(5)}>{t("auth.link")}</button>
           </div>
         </div>
       )}
@@ -110,9 +157,9 @@ export default function SignupPage() {
           <label className="block rounded-xl border border-clinic-border p-3"><input type="radio" name="wa" checked={signup.whatsappChoice === "platform_default"} onChange={() => updateSignup({ whatsappChoice: "platform_default" })} /> {t("auth.waPlatformDefault")}</label>
           <label className="block rounded-xl border border-clinic-border p-3"><input type="radio" name="wa" checked={signup.whatsappChoice === "own_number"} onChange={() => updateSignup({ whatsappChoice: "own_number" })} /> {t("auth.waOwnNumber")}</label>
           <div className="flex justify-between gap-2">
-            <button className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(4)}>{t("common.back")}</button>
-            <button className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => void finishSignup()}>{t("common.skip")}</button>
-            <button className="rounded-xl bg-clinic-primary px-4 py-2 text-white" onClick={() => void finishSignup()}>{t("auth.finishSetup")}</button>
+            <button type="button" className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => setStep(4)}>{t("common.back")}</button>
+            <button type="button" className="rounded-xl border border-clinic-border px-4 py-2" onClick={() => void finishSignup()}>{t("common.skip")}</button>
+            <button type="button" className="rounded-xl bg-clinic-primary px-4 py-2 text-white" onClick={() => void finishSignup()}>{t("auth.finishSetup")}</button>
           </div>
         </div>
       )}

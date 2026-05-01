@@ -12,6 +12,9 @@ type SignupDraft = {
   pincode: string;
   opdStart: string;
   opdEnd: string;
+  hasEveningShift: boolean;
+  eveningStart: string;
+  eveningEnd: string;
   languages: string[];
   tokenPrefix: string;
   hfrId: string;
@@ -37,6 +40,9 @@ const initialDraft: SignupDraft = {
   pincode: "",
   opdStart: "",
   opdEnd: "",
+  hasEveningShift: false,
+  eveningStart: "",
+  eveningEnd: "",
   languages: ["hindi", "english"],
   tokenPrefix: "OPD-",
   hfrId: "",

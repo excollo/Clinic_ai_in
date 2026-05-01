@@ -2,7 +2,6 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { patchSettingsMock } from "@/lib/mocks/settings";
 
 const ProfileTab = lazy(() => import("./settings-tabs/ProfileTab"));
 const ClinicTab = lazy(() => import("./settings-tabs/ClinicTab"));
@@ -59,9 +58,9 @@ export default function SettingsPage() {
         <button
           onClick={async () => {
             setSaving(true);
-            await patchSettingsMock(active, {});
+            await new Promise((resolve) => setTimeout(resolve, 150));
             setSaving(false);
-            toast.success(t("settings.saved"));
+            toast.info("Settings save API is not connected yet.");
           }}
           className="rounded-xl bg-clinic-primary px-4 py-2 text-white disabled:opacity-50"
           disabled={saving}

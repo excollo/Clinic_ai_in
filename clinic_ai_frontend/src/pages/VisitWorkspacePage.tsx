@@ -3,7 +3,6 @@ import { CheckCircle2, Lock } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { getMockVisitById } from "@/lib/mocks/visits";
 import { useVisitStore, type VisitTabKey } from "@/lib/visitStore";
 import apiClient from "@/lib/apiClient";
 
@@ -31,26 +30,25 @@ export default function VisitWorkspacePage() {
     retry: 0,
   });
   const current = useMemo(() => {
-    const visitId = params.visitId ?? "vis_chest_001";
+    const visitId = params.visitId ?? "";
     const row = (queueQuery.data ?? []).find((item) => String(item.visit_id) === visitId);
-    if (row) {
-      return {
-        visitId,
-        patientId: String(row.patient_id ?? ""),
-        patientName: String(row.name ?? "patient"),
-        patientAge: Number(row.age ?? 0),
-        patientSex: String(row.sex ?? "other") as "male" | "female" | "other",
-        tokenNumber: String(row.token_number ?? ""),
-        visitType: (String(row.visit_type ?? "walk_in") as "walk_in" | "scheduled"),
-        status: (String(row.status ?? "in_consult") === "done" ? "done" : "in_consult") as "in_consult" | "done",
-        chiefComplaint: String(row.chief_complaint ?? ""),
-        patientLanguage: "hindi",
-      };
-    }
-    return getMockVisitById(visitId);
+    if (!row) return null;
+    return {
+      visitId,
+      patientId: String(row.patient_id ?? ""),
+      patientName: String(row.name ?? "patient"),
+      patientAge: Number(row.age ?? 0),
+      patientSex: String(row.sex ?? "other") as "male" | "female" | "other",
+      tokenNumber: String(row.token_number ?? ""),
+      visitType: (String(row.visit_type ?? "walk_in") as "walk_in" | "scheduled"),
+      status: (String(row.status ?? "in_consult") === "done" ? "done" : "in_consult") as "in_consult" | "done",
+      chiefComplaint: String(row.chief_complaint ?? ""),
+      patientLanguage: "hindi",
+    };
   }, [params.visitId, queueQuery.data]);
 
   useEffect(() => {
+    if (!current) return;
     if (!visit.visitId || visit.visitId !== current.visitId) {
       useVisitStore.getState().setVisit({
         visitId: current.visitId,
@@ -67,6 +65,14 @@ export default function VisitWorkspacePage() {
       });
     }
   }, [current, visit.visitId]);
+
+  if (!current) {
+    return (
+      <div className="rounded-xl border border-dashed border-clinic-border bg-white p-6 text-sm text-clinic-muted">
+        Visit not found in live queue.
+      </div>
+    );
+  }
 
   const lockedFrom = tabOrder.findIndex((tab) => !visit.completedTabs.has(tab) && tab !== "previsit");
 

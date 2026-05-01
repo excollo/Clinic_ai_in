@@ -1,31 +1,75 @@
 import { useMemo, useState } from "react";
 import { useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight, FlaskConical, MessageCircleWarning, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { mockNotifications } from "@/lib/mocks/notifications";
+import { useAuthStore } from "@/lib/authStore";
+import apiClient from "@/lib/apiClient";
+
+type NotificationItem = {
+  notification_id?: string;
+  id?: string;
+  type?: string;
+  title?: string;
+  message?: string;
+  target?: string;
+  created_at?: string;
+  createdAt?: string;
+};
 
 export default function NotificationsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const doctorId = useAuthStore((s) => s.doctorId ?? "");
   const [filter, setFilter] = useState("all");
-  const [readAll, setReadAll] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const rows = useMemo(() => {
-    const base = Array.from({ length: 120 }).map((_, i) => ({ ...mockNotifications[i % mockNotifications.length], id: `${mockNotifications[i % mockNotifications.length].id}_${i}` }));
-    return base.filter((n) => filter === "all" || n.type === filter);
-  }, [filter]);
+  const query = useQuery({
+    queryKey: ["notifications", doctorId, filter],
+    enabled: Boolean(doctorId),
+    queryFn: async () => {
+      const response = await apiClient.get("/notifications", {
+        params: { doctor_id: doctorId, limit: 200, offset: 0, filter },
+      });
+      return {
+        notifications: (response.data?.notifications ?? []) as NotificationItem[],
+        unreadCount: Number(response.data?.unread_count ?? 0),
+      };
+    },
+  });
+  const rows = useMemo(
+    () =>
+      (query.data?.notifications ?? []).map((n, idx) => ({
+        id: String(n.notification_id || n.id || `notif_${idx}`),
+        type: String(n.type || "follow_up_due"),
+        title: String(n.title || "Notification"),
+        description: String(n.message || ""),
+        target: String(n.target || "/dashboard"),
+        createdAt: String(n.created_at || n.createdAt || new Date().toISOString()),
+      })),
+    [query.data?.notifications],
+  );
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => listRef.current, estimateSize: () => 72, overscan: 10 });
-  const unread = readAll ? 0 : rows.length;
+  const unread = Number(query.data?.unreadCount ?? 0);
   const icon = (type: string) => (type === "lab_ready" ? <FlaskConical className="h-4 w-4" /> : type === "follow_up_due" ? <RefreshCw className="h-4 w-4" /> : <MessageCircleWarning className="h-4 w-4" />);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-h2">{t("notifications.title")} <span className="ml-2 rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700">{unread}</span></h2>
-        <button onClick={() => setReadAll(true)} className="rounded-xl border border-clinic-border bg-white px-3 py-2 text-sm">{t("notifications.markAllRead")}</button>
+        <button
+          onClick={async () => {
+            if (!doctorId) return;
+            await apiClient.patch("/notifications/mark-all-read", { doctor_id: doctorId });
+            await queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          }}
+          className="rounded-xl border border-clinic-border bg-white px-3 py-2 text-sm"
+        >
+          {t("notifications.markAllRead")}
+        </button>
       </div>
       <div className="flex flex-wrap gap-2">
         {[
@@ -40,6 +84,9 @@ export default function NotificationsPage() {
         ))}
       </div>
       <div ref={listRef} className="clinic-card max-h-[70vh] overflow-auto">
+        {!query.isLoading && rows.length === 0 && (
+          <div className="p-6 text-sm text-clinic-muted">No notifications available.</div>
+        )}
         <div className="relative" style={{ height: `${virtualizer.getTotalSize()}px` }}>
         {virtualizer.getVirtualItems().map((item) => {
           const n = rows[item.index];

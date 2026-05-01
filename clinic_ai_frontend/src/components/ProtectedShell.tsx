@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Calendar, FileHeart, FlaskConical, LayoutDashboard, LogOut, QrCode, Settings, ShieldCheck, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import apiClient from "@/lib/apiClient";
 import { useAuthStore } from "@/lib/authStore";
@@ -35,6 +35,7 @@ async function fetchUnsyncedCount() {
 export function ProtectedShell() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
+  const location = useLocation();
   const navGroups = [
     {
       title: t("shell.practice"),
@@ -63,6 +64,7 @@ export function ProtectedShell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const health = useBackendHealth();
   const unsynced = useQuery({ queryKey: ["unsynced"], queryFn: fetchUnsyncedCount, refetchInterval: 10_000 });
+  const showGlobalTopbar = location.pathname === "/dashboard";
 
   useEffect(() => {
     let cleanup: undefined | (() => void);
@@ -148,15 +150,17 @@ export function ProtectedShell() {
         </div>
       </aside>
       <main className="flex-1 p-4 md:p-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h1 className="text-h2">{t("common.dashboard")}</h1>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-clinic-border bg-white px-2 py-1 text-xs"><span className={`h-2 w-2 rounded-full ${healthState.tone === "red" ? "bg-red-500" : healthState.tone === "amber" ? "bg-amber-500" : "bg-green-500"}`} />{healthState.label}</span>
-            {(unsynced.data ?? 0) > 0 && <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs text-amber-700">{t("topbar.unsyncedCount", { count: unsynced.data })}</span>}
-            <button className="rounded-lg border border-clinic-border bg-white px-3 py-2 text-sm">{t("topbar.languageToggle")}</button>
-            <button onClick={() => navigate("/notifications")} aria-label={t("common.notifications")} className="rounded-lg border border-clinic-border bg-white p-2"><Bell className="h-4 w-4" /></button>
+        {showGlobalTopbar && (
+          <div className="mb-5 flex items-center justify-between">
+            <h1 className="text-h2">{t("common.dashboard")}</h1>
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-2 rounded-lg border border-clinic-border bg-white px-2 py-1 text-xs"><span className={`h-2 w-2 rounded-full ${healthState.tone === "red" ? "bg-red-500" : healthState.tone === "amber" ? "bg-amber-500" : "bg-green-500"}`} />{healthState.label}</span>
+              {(unsynced.data ?? 0) > 0 && <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs text-amber-700">{t("topbar.unsyncedCount", { count: unsynced.data })}</span>}
+              <button className="rounded-lg border border-clinic-border bg-white px-3 py-2 text-sm">{t("topbar.languageToggle")}</button>
+              <button onClick={() => navigate("/notifications")} aria-label={t("common.notifications")} className="rounded-lg border border-clinic-border bg-white p-2"><Bell className="h-4 w-4" /></button>
+            </div>
           </div>
-        </div>
+        )}
         <Outlet />
       </main>
       <RegisterPatientModal open={registerOpen} onClose={() => setRegisterOpen(false)} />

@@ -3,13 +3,19 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { fetchCareprepQueue } from "@/lib/mocks/careprep";
+import { useAuthStore } from "@/lib/authStore";
+import { fetchDoctorQueue } from "@/lib/services/queueService";
 
 export default function CarePrepListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const doctorId = useAuthStore((s) => s.doctorId ?? "");
   const [filter, setFilter] = useState("today");
-  const query = useQuery({ queryKey: ["careprep-queue"], queryFn: fetchCareprepQueue });
+  const query = useQuery({
+    queryKey: ["careprep-queue", doctorId],
+    enabled: Boolean(doctorId),
+    queryFn: () => fetchDoctorQueue(doctorId),
+  });
 
   const rows = useMemo(() => {
     const list = [...(query.data ?? [])];

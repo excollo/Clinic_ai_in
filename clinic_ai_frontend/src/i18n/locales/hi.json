@@ -65,8 +65,7 @@
     "otpSent": "OTP sent successfully",
     "passwordResetSuccess": "Password reset successfully. Please sign in.",
     "mobileValidation": "Enter a valid Indian mobile number",
-    "requiredField": "This field is required"
-    ,
+    "requiredField": "This field is required",
     "specialtySelect": "Select",
     "specialtyGeneralMedicine": "General Medicine",
     "specialtyPediatrics": "Pediatrics",
@@ -82,7 +81,11 @@
     "link": "Link",
     "waPlatformDefault": "Use platform default (recommended)",
     "waOwnNumber": "Connect my own WhatsApp Business number",
-    "mobileAriaLabel": "Mobile number input"
+    "mobileAriaLabel": "Mobile number input",
+    "secondShift": "Add evening shift",
+    "eveningStart": "Evening OPD start",
+    "eveningEnd": "Evening OPD end",
+    "accountCreatedLogin": "Account created. Please sign in."
   },
   "topbar": {
     "languageToggle": "Hindi / English",

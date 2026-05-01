@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useParams } from "react-router-dom";
-import { mockPatients } from "@/lib/mocks/patients";
+import type { PatientRecord } from "@/features/patients/hooks/usePatients";
 
 const OverviewTab = lazy(() => import("./patient-detail/OverviewTab"));
 const VisitsTab = lazy(() => import("./patient-detail/VisitsTab"));
@@ -16,8 +16,16 @@ export default function PatientDetailPage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("overview");
   const params = useParams();
-  const state = useLocation().state as { patient?: (typeof mockPatients)[number] } | undefined;
-  const patient = useMemo(() => state?.patient ?? mockPatients.find((p) => p.id === params.id) ?? mockPatients[0], [params.id, state]);
+  const state = useLocation().state as { patient?: PatientRecord } | undefined;
+  const patient = useMemo(() => (state?.patient && state.patient.id === params.id ? state.patient : null), [params.id, state]);
+
+  if (!patient) {
+    return (
+      <div className="rounded-xl border border-dashed border-clinic-border bg-white p-6 text-sm text-clinic-muted">
+        Patient details are available from the live patient list. Open this page from Patients screen.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
