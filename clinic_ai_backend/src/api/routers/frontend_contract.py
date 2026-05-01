@@ -605,7 +605,18 @@ def patients_register(
     if existing_patient:
         db.patients.update_one(
             {"patient_id": patient_id},
-            {"$set": {"updated_at": now}, "$inc": {"visit_count": 1}},
+            {
+                "$set": {
+                    "doctor_id": doctor_id,
+                    "name": body.name,
+                    "age": body.age,
+                    "sex": body.sex,
+                    "mobile": body.mobile,
+                    "language": body.language,
+                    "updated_at": now,
+                },
+                "$inc": {"visit_count": 1},
+            },
         )
     else:
         db.patients.insert_one(
