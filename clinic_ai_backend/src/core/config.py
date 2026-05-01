@@ -130,8 +130,10 @@ class Settings:
         self.public_backend_url: str = (os.getenv("PUBLIC_BACKEND_URL", "") or "").strip()
         # HMAC secret for self-hosted signed URLs to /internal/audio; min 32 chars when generating/using URLs.
         self.audio_url_signing_secret: str = os.getenv("AUDIO_URL_SIGNING_SECRET", "") or ""
+        # Keep workers on by default so /api/notes/transcribe jobs are actually consumed
+        # in standard single-service deployments (e.g., Render web service only).
         self.run_transcription_workers_in_api: bool = (
-            os.getenv("RUN_TRANSCRIPTION_WORKERS_IN_API", "false").lower() == "true"
+            os.getenv("RUN_TRANSCRIPTION_WORKERS_IN_API", "true").lower() == "true"
         )
         self.use_local_adapters: bool = os.getenv("USE_LOCAL_ADAPTERS", "false").lower() == "true"
         self.local_audio_storage_path: str = os.getenv("LOCAL_AUDIO_STORAGE_PATH", "/tmp/clinic_audio")
