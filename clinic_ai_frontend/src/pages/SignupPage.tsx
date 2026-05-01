@@ -35,12 +35,12 @@ export default function SignupPage() {
     setStep(2);
   };
   const finishSignup = async () => {
+    const values = form.getValues();
+    const draft = {
+      ...signup,
+      ...values,
+    };
     try {
-      const values = form.getValues();
-      const draft = {
-        ...signup,
-        ...values,
-      };
       if (draft.hasEveningShift && (!draft.eveningStart || !draft.eveningEnd)) {
         toast.error(t("auth.requiredField"));
         return;
@@ -80,8 +80,15 @@ export default function SignupPage() {
       resetSignup();
       toast.success(t("auth.accountCreatedLogin"));
       navigate("/login", { state: { mobile: draft.mobile, password: draft.password, fromSignup: true } });
-    } catch {
-      toast.error(t("common.error"));
+    } catch (error) {
+      const status = (error as { response?: { status?: number; data?: { detail?: string } } })?.response?.status;
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "";
+      if (status === 409) {
+        toast.error(detail || "Account already exists. Please sign in.");
+        navigate("/login", { state: { mobile: draft.mobile, fromSignup: true } });
+        return;
+      }
+      toast.error(detail || t("common.error"));
     }
   };
   useEffect(() => {
