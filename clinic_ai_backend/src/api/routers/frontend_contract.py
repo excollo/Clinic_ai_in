@@ -36,6 +36,7 @@ from src.api.schemas.frontend_contract import (
     VitalsRequest,
     WhatsAppSendRequest,
 )
+from src.application.utils.patient_id_crypto import resolve_internal_patient_id
 from src.core.auth import hash_password, verify_password
 from src.core.config import get_settings
 from src.application.services.intake_chat_service import IntakeChatService
@@ -880,6 +881,69 @@ def vitals_save(
     )
     _set_audit_state(request, action="vitals_captured", resource_type="visit", resource_id=visit_id, patient_id=patient_id, visit_id=visit_id)
     return {"vitals_id": vitals_id, "recorded_at": recorded_at}
+
+
+@router.get("/patients/{patient_id}/visits/{visit_id}/vitals")
+def vitals_get(
+    patient_id: str,
+    visit_id: str,
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    """Return persisted vitals for this visit when already recorded."""
+    _ = auth
+    db = get_database()
+    doc = db.vitals.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    if not doc:
+        raise _error(404, "vitals not found")
+    return doc
+
+
+@router.get("/patients/{patient_id}/visits/{visit_id}/workspace-progress")
+def workspace_progress(
+    patient_id: str,
+    visit_id: str,
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    """Summarize saved workflow artifact so clients can hydrate without redoing generation."""
+    _ = auth
+    db = get_database()
+    internal_pid = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
+    vitals_doc = db.vitals.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    visit_row = db.visits.find_one({"visit_id": visit_id, "patient_id": patient_id}) or {}
+    vitals_recorded = bool(vitals_doc or visit_row.get("vitals_recorded"))
+
+    session = db.visit_transcription_sessions.find_one(
+        {"patient_id": internal_pid, "visit_id": visit_id}, {"_id": 0}
+    )
+    ts = str((session or {}).get("transcription_status") or "").lower()
+    transcription_complete = ts == "completed" and bool(
+        (session or {}).get("structured_dialogue") or (session or {}).get("transcript")
+    )
+
+    note = db.india_clinical_notes.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    clinical_note_status: str | None = None
+    if note:
+        clinical_note_status = str(note.get("status") or "draft")
+
+    recap_sent = (
+        db.whatsapp_messages.count_documents(
+            {
+                "visit_id": visit_id,
+                "patient_id": patient_id,
+                "message_type": "post_visit_recap",
+                "status": "queued",
+            }
+        )
+        > 0
+    )
+
+    return {
+        "vitals_recorded": vitals_recorded,
+        "vitals": vitals_doc,
+        "transcription_complete": transcription_complete,
+        "clinical_note_status": clinical_note_status,
+        "recap_sent": recap_sent,
+    }
 
 
 @router.post("/notes/india-clinical-note")

@@ -712,6 +712,61 @@ async def test_vitals_save_returns_409_on_second_save():
 
 
 @pytest.mark.asyncio
+async def test_vitals_get_and_workspace_progress_after_vitals_save(patched_db):
+    headers = _auth_headers("doctor-workspace-progress")
+    async with _client() as client:
+        reg = await client.post(
+            "/patients/register",
+            json={
+                "name": "Workspace Progress",
+                "age": 41,
+                "sex": "M",
+                "mobile": "9876543299",
+                "language": "en",
+                "chief_complaint": "fever",
+                "workflow_type": "walk_in",
+            },
+            headers=headers,
+        )
+        assert reg.status_code == 200
+        patient_id = reg.json()["patient_id"]
+        visit_id = reg.json()["visit_id"]
+        progress0 = await client.get(
+            f"/patients/{patient_id}/visits/{visit_id}/workspace-progress",
+            headers=headers,
+        )
+        assert progress0.status_code == 200
+        assert progress0.json()["vitals_recorded"] is False
+        assert progress0.json()["transcription_complete"] is False
+
+        save = await client.post(
+            f"/patients/{patient_id}/visits/{visit_id}/vitals",
+            json={
+                "blood_pressure": {"systolic": 120, "diastolic": 80},
+                "weight": 72.0,
+                "dynamic_values": {},
+            },
+            headers=headers,
+        )
+        assert save.status_code == 200
+        got = await client.get(
+            f"/patients/{patient_id}/visits/{visit_id}/vitals",
+            headers=headers,
+        )
+        progress1 = await client.get(
+            f"/patients/{patient_id}/visits/{visit_id}/workspace-progress",
+            headers=headers,
+        )
+    assert got.status_code == 200
+    assert got.json()["blood_pressure"]["systolic"] == 120
+    assert progress1.status_code == 200
+    body = progress1.json()
+    assert body["vitals_recorded"] is True
+    assert body["vitals"] is not None
+    assert body["clinical_note_status"] is None
+
+
+@pytest.mark.asyncio
 async def test_india_clinical_note_draft_save():
     headers = _auth_headers("doctor-note-draft")
     async with _client() as client:
