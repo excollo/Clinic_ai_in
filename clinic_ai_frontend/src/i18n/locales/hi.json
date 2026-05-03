@@ -27,6 +27,13 @@
     "doctor": "Doctor",
     "unknown": "Unknown"
   },
+  "time": {
+    "hour": "घंटा",
+    "minute": "मिनट",
+    "period": "AM / PM",
+    "am": "AM",
+    "pm": "PM"
+  },
   "auth": {
     "signIn": "Sign in",
     "signingIn": "Signing in...",
@@ -341,6 +348,7 @@
     "followUpValue": "Follow up in 3 days.",
     "saveDraft": "Save draft",
     "approveContinue": "Approve & send recap ->",
+    "alreadyApprovedProceed": "This note was already approved. You can continue to Recap.",
     "medicinePlaceholder": "Medicine name + dose",
     "cancel": "Cancel",
     "save": "Save",

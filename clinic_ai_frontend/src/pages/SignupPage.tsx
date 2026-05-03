@@ -8,6 +8,7 @@ import { useAuthFlowStore } from "@/lib/authFlowStore";
 import { isValidIndianMobile } from "@/lib/format";
 import { sendOtp, signupDoctor } from "@/lib/mocks/auth";
 import { AuthCard, Field, MobileInput, OtpInput } from "@/features/auth/components";
+import TimeSelect12h from "@/components/TimeSelect12h";
 
 export default function SignupPage() {
   const { t } = useTranslation();
@@ -112,6 +113,20 @@ export default function SignupPage() {
       void import("@/pages/DashboardPage");
     }
   }, [step]);
+
+  const hasEveningShift = Boolean(form.watch("hasEveningShift"));
+  useEffect(() => {
+    if (step !== 3) return;
+    const ok = (s: unknown) => typeof s === "string" && /^\d{2}:\d{2}$/.test(s.trim());
+    if (!ok(form.getValues("opdStart"))) form.setValue("opdStart", "09:00");
+    if (!ok(form.getValues("opdEnd"))) form.setValue("opdEnd", "18:00");
+  }, [step, form]);
+  useEffect(() => {
+    if (step !== 3 || !hasEveningShift) return;
+    const ok = (s: unknown) => typeof s === "string" && /^\d{2}:\d{2}$/.test(s.trim());
+    if (!ok(form.getValues("eveningStart"))) form.setValue("eveningStart", "17:00");
+    if (!ok(form.getValues("eveningEnd"))) form.setValue("eveningEnd", "21:00");
+  }, [step, hasEveningShift, form]);
   const stepLabels = [t("auth.doctorDetails"), t("auth.otpVerification"), t("auth.clinicSetup"), `${t("auth.abdmLinkage")} (${t("common.optional")})`, `${t("auth.whatsappSetup")} (${t("common.optional")})`];
 
   return (
@@ -147,8 +162,22 @@ export default function SignupPage() {
             <Field label={t("auth.pincode")} required><input className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("pincode", { required: true })} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label={t("auth.opdStart")} required><input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("opdStart", { required: true })} /></Field>
-            <Field label={t("auth.opdEnd")} required><input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("opdEnd", { required: true })} /></Field>
+            <Field label={t("auth.opdStart")} required>
+              <input type="hidden" {...form.register("opdStart", { required: true })} />
+              <TimeSelect12h
+                value={form.watch("opdStart") || "09:00"}
+                displayFallback="09:00"
+                onChange={(v) => form.setValue("opdStart", v, { shouldDirty: true, shouldValidate: true })}
+              />
+            </Field>
+            <Field label={t("auth.opdEnd")} required>
+              <input type="hidden" {...form.register("opdEnd", { required: true })} />
+              <TimeSelect12h
+                value={form.watch("opdEnd") || "18:00"}
+                displayFallback="18:00"
+                onChange={(v) => form.setValue("opdEnd", v, { shouldDirty: true, shouldValidate: true })}
+              />
+            </Field>
           </div>
           <label className="flex items-center gap-2 rounded-xl border border-clinic-border px-3 py-2 text-sm">
             <input
@@ -161,10 +190,20 @@ export default function SignupPage() {
           {form.watch("hasEveningShift") && (
             <div className="grid grid-cols-2 gap-3">
               <Field label={t("auth.eveningStart")} required>
-                <input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("eveningStart", { required: true })} />
+                <input type="hidden" {...form.register("eveningStart", { required: true })} />
+                <TimeSelect12h
+                  value={form.watch("eveningStart") || "17:00"}
+                  displayFallback="17:00"
+                  onChange={(v) => form.setValue("eveningStart", v, { shouldDirty: true, shouldValidate: true })}
+                />
               </Field>
               <Field label={t("auth.eveningEnd")} required>
-                <input type="time" className="focus-ring w-full rounded-xl border border-clinic-border px-3 py-3" {...form.register("eveningEnd", { required: true })} />
+                <input type="hidden" {...form.register("eveningEnd", { required: true })} />
+                <TimeSelect12h
+                  value={form.watch("eveningEnd") || "21:00"}
+                  displayFallback="21:00"
+                  onChange={(v) => form.setValue("eveningEnd", v, { shouldDirty: true, shouldValidate: true })}
+                />
               </Field>
             </div>
           )}

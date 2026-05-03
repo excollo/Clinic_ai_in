@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { isValidIndianMobile, normalizeIndianMobile } from "@/lib/format";
 import { registerPatient } from "@/lib/registrationService";
+import TimeSelect12h from "@/components/TimeSelect12h";
 
 const schema = z.object({
   visit_type: z.enum(["walk_in", "scheduled"]),
@@ -55,6 +56,16 @@ export function RegisterPatientModal({
     },
   });
   const mobile = watch("mobile");
+  const appointment_time = watch("appointment_time");
+  const registerInFlightRef = useRef(false);
+  const apptFallbackRef = useRef<string>("");
+  if (!apptFallbackRef.current) {
+    const n = new Date();
+    apptFallbackRef.current = `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`;
+  }
+  const apptTimeForPicker = appointment_time?.trim() && /^\d{1,2}:\d{2}$/.test(appointment_time.trim())
+    ? appointment_time.trim()
+    : apptFallbackRef.current;
 
   if (!asPage && !open) return null;
 
@@ -68,40 +79,47 @@ export function RegisterPatientModal({
   };
 
   const onSubmit = async (values: FormValues) => {
+    if (registerInFlightRef.current) return;
+    registerInFlightRef.current = true;
     const sex = values.sex === "male" ? "M" : values.sex === "female" ? "F" : "Other";
     const workflow = values.visit_type;
     const now = new Date();
     const fallbackDate = now.toISOString().slice(0, 10);
     const fallbackTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const res = await registerPatient({
-      name: `${values.first_name} ${values.last_name}`.trim(),
-      age: values.age,
-      sex,
-      mobile: normalizeIndianMobile(values.mobile),
-      language: values.preferred_language,
-      chief_complaint: "General consultation",
-      workflow_type: workflow,
-      scheduled_date: values.appointment_date || fallbackDate,
-      scheduled_time: values.appointment_time || fallbackTime,
-    });
-    toast.success(t("registration.registered"));
-    if (workflow === "scheduled") {
-      if (res.whatsapp_triggered) {
-        toast.success("WhatsApp intake triggered.");
-      } else {
-        toast.warning("Appointment created, but WhatsApp intake was not triggered.");
+    try {
+      const res = await registerPatient({
+        name: `${values.first_name} ${values.last_name}`.trim(),
+        age: values.age,
+        sex,
+        mobile: normalizeIndianMobile(values.mobile),
+        language: values.preferred_language,
+        chief_complaint: "General consultation",
+        workflow_type: workflow,
+        scheduled_date: values.appointment_date || fallbackDate,
+        scheduled_time: values.appointment_time || fallbackTime,
+        ...(workflow === "scheduled" ? { intake_mode: "whatsapp" as const } : {}),
+      });
+      toast.success(t("registration.registered"));
+      if (workflow === "scheduled") {
+        if (res.whatsapp_triggered) {
+          toast.success("WhatsApp intake triggered.");
+        } else {
+          toast.warning("Appointment created, but WhatsApp intake was not triggered.");
+        }
       }
+      onRegistered?.();
+      onClose();
+      navigate(`/consent/${res.visit_id}`, {
+        state: {
+          ...res,
+          patientName: `${values.first_name} ${values.last_name}`.trim(),
+          patientLanguage: values.preferred_language,
+          visitType: workflow,
+        },
+      });
+    } finally {
+      registerInFlightRef.current = false;
     }
-    onRegistered?.();
-    onClose();
-    navigate(`/consent/${res.visit_id}`, {
-      state: {
-        ...res,
-        patientName: `${values.first_name} ${values.last_name}`.trim(),
-        patientLanguage: values.preferred_language,
-        visitType: workflow,
-      },
-    });
   };
 
   return (
@@ -126,7 +144,11 @@ export function RegisterPatientModal({
           <select className="w-full rounded-xl border border-clinic-border px-3 py-2" {...register("preferred_language")}><option value="hindi">{t("registration.hindi")}</option><option value="english">{t("registration.english")}</option><option value="marathi">{t("registration.marathi")}</option><option value="tamil">{t("registration.tamil")}</option><option value="telugu">{t("registration.telugu")}</option><option value="bengali">{t("registration.bengali")}</option><option value="kannada">{t("registration.kannada")}</option></select>
           <div className="grid grid-cols-2 gap-3">
             <input type="date" className="rounded-xl border border-clinic-border px-3 py-2" {...register("appointment_date")} />
-            <input type="time" className="rounded-xl border border-clinic-border px-3 py-2" {...register("appointment_time")} />
+            <TimeSelect12h
+              value={apptTimeForPicker}
+              displayFallback={apptFallbackRef.current}
+              onChange={(next) => setValue("appointment_time", next, { shouldValidate: true })}
+            />
           </div>
           <div className="mt-5 flex justify-end gap-3">
             <button type="button" onClick={doClose} className="rounded-xl border border-clinic-border bg-white px-4 py-2">{t("common.cancel")}</button>

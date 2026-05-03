@@ -105,13 +105,29 @@ export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void
     return t("common.error");
   };
 
+  const isAlreadyApprovedConflict = (error: unknown): boolean => {
+    const maybe = error as {
+      response?: { status?: number };
+    };
+    if (Number(maybe?.response?.status) !== 409) return false;
+    const msg = extractErrorMessage(error).toLowerCase();
+    return msg.includes("already approved");
+  };
+
   const saveDraft = async () => {
+    if (approved) return;
     try {
       setLoading(true);
       await apiClient.post("/notes/india-clinical-note", buildPayload("draft"));
       toast.success(t("clinicalNote.saveDraft"));
     } catch (error) {
-      toast.error(extractErrorMessage(error));
+      if (isAlreadyApprovedConflict(error)) {
+        setApproved(true);
+        useVisitStore.getState().markTabComplete("clinical_note");
+        toast.message(t("clinicalNote.alreadyApprovedProceed"));
+      } else {
+        toast.error(extractErrorMessage(error));
+      }
     } finally {
       setLoading(false);
     }
@@ -141,6 +157,36 @@ export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void
       try {
         await apiClient.post("/notes/india-clinical-note", buildPayload("approved"));
       } catch (error) {
+        if (isAlreadyApprovedConflict(error)) {
+          try {
+            const response = await apiClient.get(`/patients/${visit.patientId}/visits/${visit.visitId}/india-clinical-note`);
+            const data = response.data as Partial<IndiaClinicalNoteRequest> & { status?: string };
+            if (data.assessment) setAssessment(data.assessment);
+            if (data.plan) setPlan(data.plan);
+            if (Array.isArray(data.rx) && data.rx.length) {
+              setRx(
+                data.rx.map((item, index) => ({
+                  id: `${index}`,
+                  name: item.name,
+                  dose: item.dose,
+                  freq: item.frequency,
+                  duration: item.duration,
+                  food: item.food_instruction,
+                })),
+              );
+            }
+            if (data.follow_up?.date) setFollowUpDate(data.follow_up.date);
+            if (data.follow_up?.instruction) setFollowUpInstruction(data.follow_up.instruction);
+          } catch {
+            /* Keep form as-is; state still approved for navigation. */
+          }
+          setApproved(true);
+          useVisitStore.getState().markTabComplete("clinical_note");
+          await queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
+          toast.message(t("clinicalNote.alreadyApprovedProceed"));
+          onApproved();
+          return;
+        }
         if (!isDraftMissingError(error)) throw error;
         // Backend requires an existing draft before approving; create it automatically.
         await apiClient.post("/notes/india-clinical-note", buildPayload("draft"));
