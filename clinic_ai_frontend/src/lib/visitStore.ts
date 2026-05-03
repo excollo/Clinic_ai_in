@@ -2,6 +2,13 @@ import { create } from "zustand";
 
 export type VisitTabKey = "previsit" | "vitals" | "transcription" | "clinical_note" | "recap";
 
+/** Scheduled visits include pre-visit/intake; walk-ins skip straight to vitals. */
+export function workspaceTabOrder(visitType: "walk_in" | "scheduled"): VisitTabKey[] {
+  return visitType === "walk_in"
+    ? ["vitals", "transcription", "clinical_note", "recap"]
+    : ["previsit", "vitals", "transcription", "clinical_note", "recap"];
+}
+
 export interface VisitState {
   visitId: string;
   patientId: string;
@@ -45,9 +52,11 @@ export const useVisitStore = create<VisitState>((set) => ({
   setStatus: (status) => set({ status }),
   hydrateServerProgress: (completedTabs) =>
     set((state) => {
-      const order: VisitTabKey[] = ["previsit", "vitals", "transcription", "clinical_note", "recap"];
+      const order = workspaceTabOrder(state.visitType);
+      const filtered =
+        state.visitType === "walk_in" ? completedTabs.filter((t) => t !== "previsit") : completedTabs;
       const next = new Set(state.completedTabs);
-      completedTabs.forEach((t) => next.add(t));
+      filtered.forEach((t) => next.add(t));
       const firstOpen = order.find((t) => !next.has(t));
       return {
         completedTabs: next,

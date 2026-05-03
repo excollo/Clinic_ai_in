@@ -3,7 +3,7 @@ import { CheckCircle2, Lock } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { useVisitStore, type VisitTabKey } from "@/lib/visitStore";
+import { useVisitStore, workspaceTabOrder, type VisitTabKey } from "@/lib/visitStore";
 import apiClient from "@/lib/apiClient";
 
 const PrevisitTab = lazy(() => import("./visit-workspace/PrevisitTab"));
@@ -11,8 +11,6 @@ const VitalsTab = lazy(() => import("./visit-workspace/VitalsTab"));
 const TranscriptionTab = lazy(() => import("./visit-workspace/TranscriptionTab"));
 const ClinicalNoteTab = lazy(() => import("./visit-workspace/ClinicalNoteTab"));
 const RecapTab = lazy(() => import("./visit-workspace/RecapTab"));
-
-const tabOrder: VisitTabKey[] = ["previsit", "vitals", "transcription", "clinical_note", "recap"];
 
 function normalizeSex(value: unknown): "male" | "female" | "other" {
   const sex = String(value || "").toLowerCase();
@@ -39,7 +37,10 @@ type WorkspaceProgress = {
   recap_sent?: boolean;
 };
 
-function deriveServerCompletedTabs(d: WorkspaceProgress): VisitTabKey[] {
+function deriveServerCompletedTabs(
+  d: WorkspaceProgress,
+  visitType: "walk_in" | "scheduled",
+): VisitTabKey[] {
   const has =
     d.vitals_recorded ||
     d.transcription_complete ||
@@ -48,7 +49,9 @@ function deriveServerCompletedTabs(d: WorkspaceProgress): VisitTabKey[] {
   if (!has) return [];
 
   const s = new Set<VisitTabKey>();
-  s.add("previsit");
+  if (visitType === "scheduled") {
+    s.add("previsit");
+  }
   if (d.vitals_recorded) s.add("vitals");
 
   const pastWithoutSavedVitals =
@@ -85,6 +88,9 @@ export default function VisitWorkspacePage() {
   });
   const workspaceHydratedKeyRef = useRef<string>("");
   const visitId = params.visitId ?? "";
+  useEffect(() => {
+    workspaceHydratedKeyRef.current = "";
+  }, [visitId]);
   const visitDetailQuery = useQuery({
     queryKey: ["visit-detail", visitId],
     enabled: Boolean(visitId),
@@ -152,6 +158,22 @@ export default function VisitWorkspacePage() {
     staleTime: 60_000,
   });
 
+  /** Safe before `current` exists: fallback only until visit header loads */
+  const tabOrder = useMemo(
+    () => workspaceTabOrder((current?.visitType ?? "walk_in") as "walk_in" | "scheduled"),
+    [current?.visitType],
+  );
+
+  useEffect(() => {
+    if (!current) return;
+    if (!visit.visitId || visit.visitId !== current.visitId) return;
+    if (visit.visitType !== "walk_in") return;
+    const orderForWalkIn = workspaceTabOrder("walk_in");
+    if (!orderForWalkIn.includes(visit.activeTab)) {
+      useVisitStore.getState().setActiveTab("vitals");
+    }
+  }, [current, visit.visitId, visit.visitType, visit.activeTab]);
+
   useEffect(() => {
     if (!current) return;
     if (!visit.visitId || visit.visitId !== current.visitId) {
@@ -164,7 +186,7 @@ export default function VisitWorkspacePage() {
         tokenNumber: current.tokenNumber,
         visitType: current.visitType,
         status: current.status,
-        activeTab: "previsit",
+        activeTab: current.visitType === "walk_in" ? "vitals" : "previsit",
         completedTabs: new Set<string>(),
         chiefComplaint: current.chiefComplaint,
       });
@@ -175,16 +197,24 @@ export default function VisitWorkspacePage() {
     if (!current?.patientId || workspaceProgressQuery.isError || !workspaceProgressQuery.data) return;
     const key = `${current.visitId}:${current.patientId}`;
     if (workspaceHydratedKeyRef.current === key) return;
-    const tabs = deriveServerCompletedTabs(workspaceProgressQuery.data);
+    const tabs = deriveServerCompletedTabs(workspaceProgressQuery.data, current.visitType);
     if (!tabs.length) return;
     workspaceHydratedKeyRef.current = key;
     useVisitStore.getState().hydrateServerProgress(tabs);
   }, [
     current?.patientId,
     current?.visitId,
+    current?.visitType,
     workspaceProgressQuery.data,
     workspaceProgressQuery.isError,
   ]);
+
+  const isLocked = (tab: VisitTabKey) => {
+    const idx = tabOrder.indexOf(tab);
+    if (idx <= 0) return false;
+    const prev = tabOrder[idx - 1];
+    return !visit.completedTabs.has(prev);
+  };
 
   if (!current) {
     return (
@@ -194,14 +224,7 @@ export default function VisitWorkspacePage() {
     );
   }
 
-  const lockedFrom = tabOrder.findIndex((tab) => !visit.completedTabs.has(tab) && tab !== "previsit");
-
-  const isLocked = (tab: VisitTabKey) => {
-    if (tab === "previsit") return false;
-    const idx = tabOrder.indexOf(tab);
-    const prev = tabOrder[idx - 1];
-    return !visit.completedTabs.has(prev);
-  };
+  const lockedHintVisible = tabOrder.some((tab) => isLocked(tab));
 
   const goNext = (tab: VisitTabKey) => {
     const idx = tabOrder.indexOf(tab);
@@ -247,14 +270,18 @@ export default function VisitWorkspacePage() {
       </div>
 
       <Suspense fallback={<div className="h-24 animate-pulse rounded-xl bg-slate-100" />}>
-        {visit.activeTab === "previsit" && <div id="tabpanel-previsit"><PrevisitTab onContinue={() => { visit.markTabComplete("previsit"); goNext("previsit"); }} /></div>}
+        {visit.visitType === "scheduled" && visit.activeTab === "previsit" && (
+          <div id="tabpanel-previsit">
+            <PrevisitTab onContinue={() => { visit.markTabComplete("previsit"); goNext("previsit"); }} />
+          </div>
+        )}
         {visit.activeTab === "vitals" && <div id="tabpanel-vitals"><VitalsTab onSkip={() => { void import("./visit-workspace/TranscriptionTab"); visit.markTabComplete("vitals"); goNext("vitals"); }} onSaved={() => { void import("./visit-workspace/TranscriptionTab"); visit.markTabComplete("vitals"); goNext("vitals"); }} /></div>}
         {visit.activeTab === "transcription" && <div id="tabpanel-transcription"><TranscriptionTab onGenerate={() => { void import("./visit-workspace/ClinicalNoteTab"); visit.markTabComplete("transcription"); goNext("transcription"); }} /></div>}
         {visit.activeTab === "clinical_note" && <div id="tabpanel-clinical_note"><ClinicalNoteTab onApproved={() => { visit.markTabComplete("clinical_note"); goNext("clinical_note"); }} /></div>}
         {visit.activeTab === "recap" && <div id="tabpanel-recap"><RecapTab approved={visit.completedTabs.has("clinical_note")} /></div>}
       </Suspense>
 
-      {lockedFrom > 0 && <p className="text-xs text-clinic-muted">{t("visitWorkspace.lockedHint")}</p>}
+      {lockedHintVisible && <p className="text-xs text-clinic-muted">{t("visitWorkspace.lockedHint")}</p>}
       <div className="hidden">
         <button onClick={() => navigate(`/visits/${visit.visitId}/recap-sent`)}>{t("visitWorkspace.hiddenRouteButton")}</button>
       </div>
