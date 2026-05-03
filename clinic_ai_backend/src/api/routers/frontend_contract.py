@@ -582,6 +582,14 @@ def consent_text(language: str = "en", version: str = "latest") -> dict[str, Any
     return {"text": text, "version": resolved_version, "language": language}
 
 
+def _canonical_indian_mobile_10(mobile_raw: str) -> str:
+    """Last 10 digits for Indian mobiles so registration + WhatsApp reconcile with Meta `from`."""
+    digits = "".join(ch for ch in str(mobile_raw or "") if ch.isdigit())
+    if len(digits) >= 10:
+        digits = digits[-10:]
+    return digits
+
+
 @router.post("/patients/register")
 def patients_register(
     body: RegisterPatientRequest,
@@ -590,7 +598,20 @@ def patients_register(
 ) -> dict[str, Any]:
     doctor_id = auth["doctor_id"]
     db = get_database()
-    existing_patient = db.patients.find_one({"doctor_id": doctor_id, "mobile": body.mobile})
+    mobile_canonical = _canonical_indian_mobile_10(body.mobile)
+    mobile_digits_only = "".join(ch for ch in str(body.mobile or "") if ch.isdigit())
+    mobile_lookup_candidates = []
+    if mobile_canonical:
+        mobile_lookup_candidates.append(mobile_canonical)
+    if mobile_digits_only:
+        mobile_lookup_candidates.append(mobile_digits_only)
+    if body.mobile.strip() and body.mobile.strip() not in mobile_lookup_candidates:
+        mobile_lookup_candidates.append(body.mobile.strip())
+    existing_patient = None
+    if mobile_lookup_candidates:
+        existing_patient = db.patients.find_one(
+            {"doctor_id": doctor_id, "mobile": {"$in": mobile_lookup_candidates}}
+        )
     if existing_patient and str(existing_patient.get("consent_status") or "") == "withdrawn":
         _set_audit_state(
             request,
@@ -614,11 +635,10 @@ def patients_register(
                     "name": body.name,
                     "age": body.age,
                     "sex": body.sex,
-                    "mobile": body.mobile,
+                    "mobile": mobile_canonical or body.mobile.strip(),
                     "language": body.language,
                     "updated_at": now,
                 },
-                "$inc": {"visit_count": 1},
             },
         )
     else:
@@ -629,7 +649,7 @@ def patients_register(
                 "name": body.name,
                 "age": body.age,
                 "sex": body.sex,
-                "mobile": body.mobile,
+                "mobile": mobile_canonical or body.mobile.strip(),
                 "language": body.language,
                 "abha_id": None,
                 "chronic_conditions": [],
@@ -664,14 +684,21 @@ def patients_register(
             "updated_at": now,
         }
     )
+    persisted_visits = db.visits.count_documents({"patient_id": patient_id})
+    db.patients.update_one(
+        {"patient_id": patient_id},
+        {"$set": {"visit_count": persisted_visits, "updated_at": now}},
+    )
     # Auto-trigger WhatsApp intake for scheduled appointments unless explicitly in-clinic.
-    if body.workflow_type == "scheduled" and body.intake_mode != "in_clinic":
-        if body.mobile:
+    effective_intake = body.intake_mode or ("whatsapp" if body.workflow_type == "scheduled" else None)
+    if body.workflow_type == "scheduled" and effective_intake != "in_clinic":
+        phone_for_whatsapp = mobile_canonical or body.mobile.strip()
+        if phone_for_whatsapp:
             try:
                 IntakeChatService().start_intake(
                     patient_id=patient_id,
                     visit_id=visit_id,
-                    to_number=body.mobile,
+                    to_number=phone_for_whatsapp,
                     language=str(body.language or "en"),
                 )
                 whatsapp_triggered = True
@@ -905,7 +932,6 @@ def workspace_progress(
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     """Summarize saved workflow artifact so clients can hydrate without redoing generation."""
-    _ = auth
     db = get_database()
     internal_pid = resolve_internal_patient_id(patient_id, allow_raw_fallback=True)
     vitals_doc = db.vitals.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
@@ -920,7 +946,14 @@ def workspace_progress(
         (session or {}).get("structured_dialogue") or (session or {}).get("transcript")
     )
 
-    note = db.india_clinical_notes.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    doctor_ws = auth["doctor_id"]
+    note = (
+        db.india_clinical_notes.find_one(
+            {"visit_id": visit_id, "doctor_id": doctor_ws},
+            {"_id": 0},
+        )
+        or db.india_clinical_notes.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    )
     clinical_note_status: str | None = None
     if note:
         clinical_note_status = str(note.get("status") or "draft")
@@ -957,6 +990,8 @@ def notes_india_clinical(
     now = datetime.now(timezone.utc)
     existing = db.india_clinical_notes.find_one({"visit_id": body.visit_id, "doctor_id": doctor_id})
     if body.status == "draft":
+        if existing and str(existing.get("status")) == "approved":
+            raise _error(409, "note already approved")
         note_id = str((existing or {}).get("note_id") or f"note_{uuid4().hex[:12]}")
         created_at = str((existing or {}).get("created_at") or _now_iso())
         db.india_clinical_notes.update_one(
@@ -1008,9 +1043,12 @@ def notes_india_get(
     visit_id: str,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
-    _ = auth
+    doctor_id = auth["doctor_id"]
     db = get_database()
-    doc = db.india_clinical_notes.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
+    doc = db.india_clinical_notes.find_one(
+        {"visit_id": visit_id, "doctor_id": doctor_id},
+        {"_id": 0},
+    ) or db.india_clinical_notes.find_one({"patient_id": patient_id, "visit_id": visit_id}, {"_id": 0})
     if not doc:
         raise _error(404, "india clinical note not found")
     return doc

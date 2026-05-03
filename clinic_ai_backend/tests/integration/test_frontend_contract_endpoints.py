@@ -767,6 +767,108 @@ async def test_vitals_get_and_workspace_progress_after_vitals_save(patched_db):
 
 
 @pytest.mark.asyncio
+async def test_register_keeps_visit_count_equal_to_documents(patched_db):
+    headers = _auth_headers("doctor-visit-count-sync")
+    mobile = "9876543288"
+    async with _client() as client:
+        reg = await client.post(
+            "/patients/register",
+            json={
+                "name": "Visit Count Sync",
+                "age": 30,
+                "sex": "M",
+                "mobile": mobile,
+                "language": "en",
+                "chief_complaint": "general",
+                "workflow_type": "walk_in",
+            },
+            headers=headers,
+        )
+    assert reg.status_code == 200
+    pid = reg.json()["patient_id"]
+    stored = patched_db.patients.find_one({"patient_id": pid}) or {}
+    n_visits = patched_db.visits.count_documents({"patient_id": pid})
+    assert int(stored.get("visit_count") or 0) == 1
+    assert n_visits == 1
+
+    async with _client() as client:
+        reg2 = await client.post(
+            "/patients/register",
+            json={
+                "name": "Visit Count Sync",
+                "age": 30,
+                "sex": "M",
+                "mobile": mobile,
+                "language": "en",
+                "chief_complaint": "follow up",
+                "workflow_type": "walk_in",
+            },
+            headers=headers,
+        )
+    assert reg2.status_code == 200
+    assert reg2.json()["patient_id"] == pid
+    stored2 = patched_db.patients.find_one({"patient_id": pid}) or {}
+    n_visits_2 = patched_db.visits.count_documents({"patient_id": pid})
+    assert int(stored2.get("visit_count") or 0) == 2
+    assert n_visits_2 == 2
+
+
+@pytest.mark.asyncio
+async def test_india_clinical_draft_returns_409_after_approve():
+    headers = _auth_headers("doctor-note-draft-after-approve")
+    async with _client() as client:
+        reg = await client.post(
+            "/patients/register",
+            json={
+                "name": "Note Draft Blocked",
+                "age": 31,
+                "sex": "F",
+                "mobile": "9876543287",
+                "language": "en",
+                "chief_complaint": "cough",
+                "workflow_type": "walk_in",
+            },
+            headers=headers,
+        )
+        visit_id = reg.json()["visit_id"]
+        patient_id = reg.json()["patient_id"]
+        await client.post(
+            "/notes/india-clinical-note",
+            json={
+                "visit_id": visit_id,
+                "patient_id": patient_id,
+                "assessment": "ok",
+                "plan": "ok",
+                "status": "draft",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/notes/india-clinical-note",
+            json={
+                "visit_id": visit_id,
+                "patient_id": patient_id,
+                "assessment": "ok",
+                "plan": "ok",
+                "status": "approved",
+            },
+            headers=headers,
+        )
+        redo_draft = await client.post(
+            "/notes/india-clinical-note",
+            json={
+                "visit_id": visit_id,
+                "patient_id": patient_id,
+                "assessment": "changed",
+                "plan": "changed",
+                "status": "draft",
+            },
+            headers=headers,
+        )
+    assert redo_draft.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_india_clinical_note_draft_save():
     headers = _auth_headers("doctor-note-draft")
     async with _client() as client:

@@ -991,13 +991,17 @@ class IntakeChatService:
             return session
 
         # Resolve through patients collection when intake session number shape diverges.
+        # Patient records store `mobile` (10-digit Indian numbers from registration).
         patients_collection = getattr(self.db, "patients", None)
         if patients_collection is None:
             return None
-        patient_query: dict = {"$or": [{"phone_number": {"$in": variants}}]}
-        if last10:
-            patient_query["$or"].append({"phone_number": {"$regex": f"{re.escape(last10)}$"}})
-        patient = patients_collection.find_one(patient_query, {"patient_id": 1}) or {}
+        patient_or: list[dict] = []
+        for fld in ("mobile", "phone_number"):
+            patient_or.append({fld: {"$in": variants}})
+            if last10:
+                patient_or.append({fld: last10})
+                patient_or.append({fld: {"$regex": f"{re.escape(last10)}$"}})
+        patient = patients_collection.find_one({"$or": patient_or}, {"patient_id": 1}) or {}
         patient_id = str(patient.get("patient_id") or "").strip()
         if not patient_id:
             return None

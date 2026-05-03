@@ -10,6 +10,51 @@ def _build_service() -> IntakeChatService:
     return service
 
 
+def test_resolve_active_session_falls_back_via_patients_mobile_field() -> None:
+    """Registration stores `mobile` (not `phone_number`); inbound must still find the session."""
+    service = IntakeChatService.__new__(IntakeChatService)
+
+    class _Sessions(_FakeCollection):
+        def find_one(self, query=None, projection=None, sort=None):  # noqa: ANN001
+            if isinstance(query, dict) and query.get("patient_id") == "pat_fallback":
+                self.record = {
+                    "_id": "sess-fb",
+                    "visit_id": "vis_fallback",
+                    "patient_id": "pat_fallback",
+                    "to_number": "910000000000",
+                    "status": "awaiting_conversation_start",
+                    "answers": [],
+                    "language": "en",
+                    "processed_message_ids": [],
+                }
+                return dict(self.record)
+            return None
+
+    class _Patients(_FakeCollection):
+        def find_one(self, query=None, projection=None):  # noqa: ANN001
+            qor = query.get("$or") if isinstance(query, dict) else None
+            if isinstance(qor, list):
+                self.record = {"patient_id": "pat_fallback"}
+                return dict(self.record)
+            return {}
+
+    fake_db = type("FakeDB", (), {})()
+    fake_db.intake_sessions = _Sessions()
+    fake_db.patients = _Patients()
+    service.db = fake_db
+    service.whatsapp = _FakeWhatsApp()
+    service.openai = OpenAIQuestionClient()
+
+    service.handle_patient_reply(
+        from_number="919876543210",
+        message_text="Hi",
+        message_id="wamid-fb-1",
+    )
+
+    assert service.whatsapp.sent
+    assert "main health problem" in service.whatsapp.sent[0][2].lower()
+
+
 def test_can_complete_when_no_fields_missing() -> None:
     service = _build_service()
     session = {
@@ -291,7 +336,7 @@ def test_start_intake_falls_back_to_text_when_template_fails() -> None:
 
     assert service.whatsapp.sent
     assert service.whatsapp.sent[0][0] == "text"
-    assert service.whatsapp.sent[0][1] == "9876543210"
+    assert service.whatsapp.sent[0][1] == "919876543210"
 
 
 def test_first_substantive_reply_after_template_is_used_as_illness() -> None:
