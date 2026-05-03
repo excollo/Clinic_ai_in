@@ -313,6 +313,7 @@
     "transcript": "Transcript",
     "generateClinical": "Generate clinical note ->",
     "confidence": "Confidence:",
+    "existingLoaded": "This visit already has a transcript. Continue to Clinical Note or review the transcript below.",
     "segment1": "Namaste, aapko kya takleef hai?",
     "segment2": "Do din se chest pain hai aur saans phool rahi hai.",
     "segment3": "Bukhar ya khansi?",
@@ -387,7 +388,9 @@
     },
     "caption": "Approved WhatsApp template · post-visit recap",
     "saveForLater": "Save for later",
-    "sendNow": "Send now"
+    "sendNow": "Send now",
+    "alreadySent": "A recap was already sent for this visit on WhatsApp.",
+    "viewConfirmation": "Open confirmation"
   },
   "whatsappConfirmation": {
     "title": "Message sent",

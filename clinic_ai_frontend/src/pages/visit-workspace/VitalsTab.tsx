@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { fetchVitalsRequiredFields } from "@/lib/vitalsService";
@@ -15,11 +15,32 @@ type DynamicField = {
   normal_range: [number, number] | null;
 };
 
+type StoredVitals = {
+  blood_pressure?: { systolic?: number; diastolic?: number };
+  weight?: number;
+  dynamic_values?: Record<string, number>;
+};
+
+type WorkspaceProgressVitals = {
+  vitals_recorded?: boolean;
+  vitals?: StoredVitals | null;
+};
+
 export default function VitalsTab({ onSkip, onSaved }: { onSkip: () => void; onSaved: () => void }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
   const visit = useVisitStore();
   const form = useForm({ mode: "onBlur", defaultValues: { systolic: "", diastolic: "", weight: "" } });
+  const workspaceQuery = useQuery({
+    queryKey: ["workspace-progress", visit.patientId, visit.visitId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/patients/${visit.patientId}/visits/${visit.visitId}/workspace-progress`);
+      return response.data as WorkspaceProgressVitals;
+    },
+    enabled: Boolean(visit.patientId && visit.visitId),
+    staleTime: 60_000,
+  });
   const vitalsQuery = useQuery({
     queryKey: ["vitals-required", visit.visitId, visit.patientId, visit.chiefComplaint],
     queryFn: () => fetchVitalsRequiredFields(visit.patientId, visit.visitId, visit.chiefComplaint),
@@ -30,6 +51,48 @@ export default function VitalsTab({ onSkip, onSaved }: { onSkip: () => void; onS
     () => (vitalsQuery.data?.dynamic_fields as DynamicField[] | undefined) ?? [],
     [vitalsQuery.data],
   );
+
+  useEffect(() => {
+    const progress = workspaceQuery.data;
+    if (!progress?.vitals_recorded) return;
+
+    const applyPayload = (doc: StoredVitals) => {
+      const dyn = doc.dynamic_values ?? {};
+      const base: Record<string, string> = {
+        systolic: String(doc.blood_pressure?.systolic ?? ""),
+        diastolic: String(doc.blood_pressure?.diastolic ?? ""),
+        weight: String(doc.weight ?? ""),
+      };
+      fields.forEach((f) => {
+        base[f.key] = String(dyn[f.key] ?? "");
+      });
+      Object.keys(dyn).forEach((k) => {
+        if (base[k] === undefined) base[k] = String(dyn[k] ?? "");
+      });
+      form.reset(base);
+      setSaved(true);
+    };
+
+    if (progress.vitals) {
+      applyPayload(progress.vitals);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiClient.get(`/patients/${visit.patientId}/visits/${visit.visitId}/vitals`);
+        if (cancelled) return;
+        applyPayload(response.data as StoredVitals);
+      } catch {
+        setSaved(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form.reset is stable; re-run when field definitions load
+  }, [workspaceQuery.data, fields, visit.patientId, visit.visitId]);
 
   const save = async (values: Record<string, unknown>) => {
     const payload = {
@@ -46,6 +109,7 @@ export default function VitalsTab({ onSkip, onSaved }: { onSkip: () => void; onS
     };
     try {
       await apiClient.post(`/patients/${visit.patientId}/visits/${visit.visitId}/vitals`, payload);
+      await queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
       setSaved(true);
       onSaved();
     } catch (error) {

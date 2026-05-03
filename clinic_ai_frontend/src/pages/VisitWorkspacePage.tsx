@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { CheckCircle2, Lock } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,42 @@ function ageFromDob(dateOfBirth: unknown): number {
   return Math.max(0, new Date().getFullYear() - year);
 }
 
+type WorkspaceProgress = {
+  vitals_recorded?: boolean;
+  transcription_complete?: boolean;
+  clinical_note_status?: string | null;
+  recap_sent?: boolean;
+};
+
+function deriveServerCompletedTabs(d: WorkspaceProgress): VisitTabKey[] {
+  const has =
+    d.vitals_recorded ||
+    d.transcription_complete ||
+    Boolean(d.clinical_note_status) ||
+    Boolean(d.recap_sent);
+  if (!has) return [];
+
+  const s = new Set<VisitTabKey>();
+  s.add("previsit");
+  if (d.vitals_recorded) s.add("vitals");
+
+  const pastWithoutSavedVitals =
+    d.transcription_complete || Boolean(d.clinical_note_status) || Boolean(d.recap_sent);
+  if (pastWithoutSavedVitals && !d.vitals_recorded) s.add("vitals");
+
+  if (
+    d.transcription_complete ||
+    d.clinical_note_status === "draft" ||
+    d.clinical_note_status === "approved" ||
+    d.recap_sent
+  )
+    s.add("transcription");
+  if (d.clinical_note_status === "approved" || d.recap_sent) s.add("clinical_note");
+  if (d.recap_sent) s.add("recap");
+
+  return Array.from(s);
+}
+
 export default function VisitWorkspacePage() {
   const { t } = useTranslation();
   const params = useParams();
@@ -47,6 +83,7 @@ export default function VisitWorkspacePage() {
     },
     retry: 0,
   });
+  const workspaceHydratedKeyRef = useRef<string>("");
   const visitId = params.visitId ?? "";
   const visitDetailQuery = useQuery({
     queryKey: ["visit-detail", visitId],
@@ -103,6 +140,18 @@ export default function VisitWorkspacePage() {
     };
   }, [queueQuery.data, visitDetailQuery.data, visitId]);
 
+  const workspaceProgressQuery = useQuery({
+    queryKey: ["workspace-progress", current?.patientId ?? "", current?.visitId ?? ""],
+    enabled: Boolean(current?.patientId && current?.visitId),
+    queryFn: async () => {
+      const response = await apiClient.get(
+        `/patients/${current!.patientId}/visits/${current!.visitId}/workspace-progress`,
+      );
+      return response.data as WorkspaceProgress;
+    },
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (!current) return;
     if (!visit.visitId || visit.visitId !== current.visitId) {
@@ -121,6 +170,21 @@ export default function VisitWorkspacePage() {
       });
     }
   }, [current, visit.visitId]);
+
+  useEffect(() => {
+    if (!current?.patientId || workspaceProgressQuery.isError || !workspaceProgressQuery.data) return;
+    const key = `${current.visitId}:${current.patientId}`;
+    if (workspaceHydratedKeyRef.current === key) return;
+    const tabs = deriveServerCompletedTabs(workspaceProgressQuery.data);
+    if (!tabs.length) return;
+    workspaceHydratedKeyRef.current = key;
+    useVisitStore.getState().hydrateServerProgress(tabs);
+  }, [
+    current?.patientId,
+    current?.visitId,
+    workspaceProgressQuery.data,
+    workspaceProgressQuery.isError,
+  ]);
 
   if (!current) {
     return (

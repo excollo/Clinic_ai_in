@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useVisitStore } from "@/lib/visitStore";
@@ -8,12 +9,71 @@ import { toast } from "sonner";
 export default function RecapTab({ approved }: { approved: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const visit = useVisitStore();
   const [sendTo, setSendTo] = useState<"patient" | "different" | "family">("patient");
   const [lang, setLang] = useState<"hindi" | "english" | "both">("hindi");
   const [recipient, setRecipient] = useState("");
   const [sending, setSending] = useState(false);
   const [previewPayload, setPreviewPayload] = useState<Record<string, unknown> | null>(null);
+
+  const workspaceProgressQuery = useQuery({
+    queryKey: ["workspace-progress", visit.patientId, visit.visitId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/patients/${visit.patientId}/visits/${visit.visitId}/workspace-progress`);
+      return response.data as { recap_sent?: boolean };
+    },
+    enabled: Boolean(visit.patientId && visit.visitId),
+    staleTime: 60_000,
+  });
+
+  const extractErrorMessage = (error: unknown): string => {
+    const maybe = error as {
+      response?: { data?: { detail?: unknown; message?: unknown } };
+      message?: unknown;
+    };
+    const detail = maybe?.response?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (detail && typeof detail === "object") {
+      const nested = detail as { detail?: unknown; message?: unknown; error?: unknown };
+      if (typeof nested.detail === "string" && nested.detail.trim()) return nested.detail;
+      if (typeof nested.message === "string" && nested.message.trim()) return nested.message;
+      if (typeof nested.error === "string" && nested.error.trim()) return nested.error;
+    }
+    const message = maybe?.response?.data?.message;
+    if (typeof message === "string" && message.trim()) return message;
+    if (typeof maybe?.message === "string" && maybe.message.trim()) return maybe.message;
+    return t("common.error");
+  };
+
+  const normalizeRecipientMobile = (value: string): string => {
+    let digits = value.replace(/\D/g, "");
+    if (digits.startsWith("91") && digits.length > 10) {
+      digits = digits.slice(2);
+    }
+    if (digits.startsWith("0") && digits.length > 10) {
+      digits = digits.slice(1);
+    }
+    if (digits.length > 10) {
+      digits = digits.slice(-10);
+    }
+    return digits;
+  };
+
+  if (workspaceProgressQuery.data?.recap_sent) {
+    return (
+      <div className="clinic-card mx-auto max-w-lg space-y-4 p-8 text-center">
+        <p className="text-sm text-[#1f3558]">{t("recap.alreadySent")}</p>
+        <button
+          type="button"
+          onClick={() => navigate(`/visits/${visit.visitId}/recap-sent`)}
+          className="rounded-xl bg-clinic-primary px-4 py-2 text-white"
+        >
+          {t("recap.viewConfirmation")}
+        </button>
+      </div>
+    );
+  }
 
   if (!approved) {
     return (
@@ -61,9 +121,10 @@ export default function RecapTab({ approved }: { approved: boolean }) {
   };
 
   const sendNow = async () => {
-    const recipientMobile = recipient || localStorage.getItem("clinic_mobile") || "";
-    if (!recipientMobile) {
-      toast.error(t("common.error"));
+    const candidate = recipient || localStorage.getItem("clinic_mobile") || "";
+    const recipientMobile = normalizeRecipientMobile(candidate);
+    if (!/^[6-9]\d{9}$/.test(recipientMobile)) {
+      toast.error(t("auth.mobileValidation"));
       return;
     }
     setSending(true);
@@ -71,14 +132,15 @@ export default function RecapTab({ approved }: { approved: boolean }) {
       await apiClient.post("/whatsapp/send", {
         visit_id: visit.visitId,
         patient_id: visit.patientId,
-        recipient_mobile: recipientMobile.replace(/\D/g, ""),
+        recipient_mobile: recipientMobile,
         language: lang,
         message_type: "post_visit_recap",
         template_variables: previewPayload ?? {},
       });
+      await queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
       navigate(`/visits/${visit.visitId}/recap-sent`);
-    } catch {
-      toast.error(t("common.error"));
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
     } finally {
       setSending(false);
     }

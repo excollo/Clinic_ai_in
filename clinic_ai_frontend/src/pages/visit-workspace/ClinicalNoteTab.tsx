@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import apiClient from "@/lib/apiClient";
 import type { IndiaClinicalNoteRequest } from "@/api/types";
@@ -10,6 +11,7 @@ type RxItem = { id: string; name: string; dose: string; freq: string; duration: 
 
 export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const visit = useVisitStore();
   const [approved, setApproved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,7 +50,11 @@ export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void
         }
         if (data.follow_up?.date) setFollowUpDate(data.follow_up.date);
         if (data.follow_up?.instruction) setFollowUpInstruction(data.follow_up.instruction);
-        setApproved(data.status === "approved");
+        const isApproved = data.status === "approved";
+        setApproved(isApproved);
+        if (isApproved) {
+          useVisitStore.getState().markTabComplete("clinical_note");
+        }
       } catch {
         // Keep default draft UI when no existing note.
       } finally {
@@ -76,15 +82,79 @@ export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void
     status,
   });
 
+  const extractErrorMessage = (error: unknown): string => {
+    const maybe = error as {
+      response?: { data?: { detail?: unknown; message?: unknown } };
+      message?: unknown;
+    };
+    const detail = maybe?.response?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as { msg?: unknown };
+      if (typeof first?.msg === "string" && first.msg.trim()) return first.msg;
+    }
+    if (detail && typeof detail === "object") {
+      const nested = detail as { detail?: unknown; message?: unknown; error?: unknown };
+      if (typeof nested.detail === "string" && nested.detail.trim()) return nested.detail;
+      if (typeof nested.message === "string" && nested.message.trim()) return nested.message;
+      if (typeof nested.error === "string" && nested.error.trim()) return nested.error;
+    }
+    const message = maybe?.response?.data?.message;
+    if (typeof message === "string" && message.trim()) return message;
+    if (typeof maybe?.message === "string" && maybe.message.trim()) return maybe.message;
+    return t("common.error");
+  };
+
   const saveDraft = async () => {
-    await apiClient.post("/notes/india-clinical-note", buildPayload("draft"));
+    try {
+      setLoading(true);
+      await apiClient.post("/notes/india-clinical-note", buildPayload("draft"));
+      toast.success(t("clinicalNote.saveDraft"));
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isDraftMissingError = (error: unknown): boolean => {
+    const maybe = error as {
+      response?: { status?: number; data?: { detail?: unknown } };
+      message?: unknown;
+    };
+    const status = Number(maybe?.response?.status || 0);
+    const detail = maybe?.response?.data?.detail;
+    if (status !== 404) return false;
+    if (typeof detail === "string") return detail.toLowerCase().includes("draft note not found");
+    if (detail && typeof detail === "object") {
+      const nested = detail as { detail?: unknown; message?: unknown };
+      if (typeof nested.detail === "string" && nested.detail.toLowerCase().includes("draft note not found")) return true;
+      if (typeof nested.message === "string" && nested.message.toLowerCase().includes("draft note not found")) return true;
+    }
+    return false;
   };
 
   const approve = async () => {
-    await apiClient.post("/notes/india-clinical-note", buildPayload("approved"));
-    setApproved(true);
-    toast.success(t("clinicalNote.approved"));
-    onApproved();
+    if (loading || approved) return;
+    try {
+      setLoading(true);
+      try {
+        await apiClient.post("/notes/india-clinical-note", buildPayload("approved"));
+      } catch (error) {
+        if (!isDraftMissingError(error)) throw error;
+        // Backend requires an existing draft before approving; create it automatically.
+        await apiClient.post("/notes/india-clinical-note", buildPayload("draft"));
+        await apiClient.post("/notes/india-clinical-note", buildPayload("approved"));
+      }
+      setApproved(true);
+      await queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
+      toast.success(t("clinicalNote.approved"));
+      onApproved();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -143,8 +213,20 @@ export default function ClinicalNoteTab({ onApproved }: { onApproved: () => void
         </div>
       </div>
       <div className="flex justify-between">
-        <button onClick={() => void saveDraft()} className="rounded-xl border border-clinic-border px-4 py-2">{t("clinicalNote.saveDraft")}</button>
-        <button disabled={approved} onClick={() => void approve()} className="rounded-xl bg-clinic-primary px-4 py-2 text-white disabled:opacity-50">{t("clinicalNote.approveContinue")}</button>
+        <button
+          disabled={loading}
+          onClick={() => void saveDraft()}
+          className="rounded-xl border border-clinic-border px-4 py-2 disabled:opacity-50"
+        >
+          {loading ? t("common.loading") : t("clinicalNote.saveDraft")}
+        </button>
+        <button
+          disabled={approved || loading}
+          onClick={() => void approve()}
+          className="rounded-xl bg-clinic-primary px-4 py-2 text-white disabled:opacity-50"
+        >
+          {loading ? t("common.loading") : t("clinicalNote.approveContinue")}
+        </button>
       </div>
     </div>
   );

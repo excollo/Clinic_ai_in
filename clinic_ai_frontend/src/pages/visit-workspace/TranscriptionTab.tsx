@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import apiClient from "@/lib/apiClient";
 import { useVisitStore } from "@/lib/visitStore";
 import type { TranscriptionResult } from "@/api/types";
 import {
   TranscriptionJobError,
   extractApiErrorMessage,
+  fetchTranscriptionResult,
   pollTranscriptionUntilTerminal,
   transcribeVisitAudio,
 } from "@/features/visits/hooks/useTranscription";
@@ -17,6 +20,7 @@ import {
 export default function TranscriptionTab({ onGenerate }: { onGenerate: () => void }) {
   const transcriptionStorageKey = "clinic_transcription_active_job";
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const visit = useVisitStore();
   const [model, dispatch] = useReducer(transcriptionStateReducer, initialTranscriptionState);
   const [state, setState] = useState<"idle" | "recording" | "done">("idle");
@@ -33,6 +37,16 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
   const timerRef = useRef<number | null>(null);
   const startAtRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const workspaceProgressQuery = useQuery({
+    queryKey: ["workspace-progress", visit.patientId, visit.visitId],
+    queryFn: async () => {
+      const response = await apiClient.get(`/patients/${visit.patientId}/visits/${visit.visitId}/workspace-progress`);
+      return response.data as { transcription_complete?: boolean };
+    },
+    enabled: Boolean(visit.patientId && visit.visitId),
+    staleTime: 60_000,
+  });
 
   const persistActiveJob = (jobId: string) => {
     localStorage.setItem(
@@ -99,6 +113,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
         dispatch({ type: "completed" });
         setState("done");
         clearActiveJob();
+        void queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
       } else {
         dispatch({ type: "poll_update", status: "processing", message: pollResult.message, jobId: pollResult.jobId });
         toast.message(pollResult.message);
@@ -150,6 +165,7 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
           dispatch({ type: "completed" });
           setState("done");
           clearActiveJob();
+          void queryClient.invalidateQueries({ queryKey: ["workspace-progress", visit.patientId, visit.visitId] });
         } else {
           dispatch({ type: "poll_update", status: "processing", message: pollResult.message, jobId: pollResult.jobId });
         }
@@ -167,6 +183,41 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visit.patientId, visit.visitId]);
+
+  useEffect(() => {
+    if (!workspaceProgressQuery.data?.transcription_complete) return;
+    if (model.state === "completed") return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        await apiClient
+          .post(`/api/notes/${visit.patientId}/visits/${visit.visitId}/dialogue/structure`)
+          .catch(() => undefined);
+        const existing = await fetchTranscriptionResult({
+          patientId: visit.patientId,
+          visitId: visit.visitId,
+          languageMix,
+        });
+        if (cancelled || !existing.segments.length) return;
+        setResult(existing);
+        dispatch({ type: "completed" });
+        setState("done");
+        clearActiveJob();
+      } catch {
+        /* leave UI ready for new recording */
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    workspaceProgressQuery.data?.transcription_complete,
+    visit.patientId,
+    visit.visitId,
+    languageMix,
+    model.state,
+  ]);
 
   const start = async () => {
     try {
@@ -209,7 +260,14 @@ export default function TranscriptionTab({ onGenerate }: { onGenerate: () => voi
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-clinic-border bg-white px-6 py-4 text-base">
-        Upload/record conversation audio here. Once completed, continue to <span className="font-semibold">Clinical Note.</span>
+        {workspaceProgressQuery.data?.transcription_complete ? (
+          <span>{t("transcription.existingLoaded")}</span>
+        ) : (
+          <span>
+            Upload/record conversation audio here. Once completed, continue to{" "}
+            <span className="font-semibold">Clinical Note.</span>
+          </span>
+        )}
       </div>
       <div className="clinic-card space-y-5 p-6">
         <div>
