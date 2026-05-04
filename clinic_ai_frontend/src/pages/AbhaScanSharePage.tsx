@@ -13,17 +13,29 @@ export default function AbhaScanSharePage() {
   const [abdmUnavailable, setAbdmUnavailable] = useState(false);
   const [abdmMessage, setAbdmMessage] = useState("");
 
+  const handleAbdmAvailabilityError = (err: unknown): boolean => {
+    const status = (err as { response?: { status?: number; data?: { detail?: { status?: string; message?: string } | string } } })?.response?.status;
+    const detail = (err as { response?: { data?: { detail?: { status?: string; message?: string } | string } } })?.response?.data?.detail;
+    if (status === 503 && typeof detail === "object" && detail?.status === "abdm_not_configured") {
+      setAbdmUnavailable(true);
+      setAbdmMessage(detail.message || "ABDM integration is not configured for this clinic. Manual registration is available.");
+      return true;
+    }
+    if (status === 501) {
+      setAbdmUnavailable(true);
+      setAbdmMessage("ABDM integration is pending on backend. Please use manual registration for now.");
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     let scanner: { stop: () => void } | undefined;
     const init = async () => {
       try {
         await apiClient.post("/patients/abha/lookup", { abha_id: "00000000000000" });
       } catch (err) {
-        const status = (err as { response?: { status?: number; data?: { detail?: { status?: string; message?: string } } } })?.response?.status;
-        const detail = (err as { response?: { data?: { detail?: { status?: string; message?: string } } } })?.response?.data?.detail;
-        if (status === 503 && detail?.status === "abdm_not_configured") {
-          setAbdmUnavailable(true);
-          setAbdmMessage(detail.message || "ABDM integration is not configured for this clinic. Manual registration is available.");
+        if (handleAbdmAvailabilityError(err)) {
           return;
         }
       }
@@ -51,12 +63,7 @@ export default function AbhaScanSharePage() {
       const response = await apiClient.post("/patients/abha/lookup", { abha_id: manual });
       navigate("/patients", { state: { prefill: response.data } });
     } catch (err) {
-      const status = (err as { response?: { status?: number; data?: { detail?: { status?: string; message?: string } } } })?.response?.status;
-      const detail = (err as { response?: { data?: { detail?: { status?: string; message?: string } } } })?.response?.data?.detail;
-      if (status === 503 && detail?.status === "abdm_not_configured") {
-        setAbdmUnavailable(true);
-        setAbdmMessage(detail.message || "ABDM integration is not configured for this clinic. Manual registration is available.");
-      } else {
+      if (!handleAbdmAvailabilityError(err)) {
         setError(t("common.error"));
       }
     } finally {

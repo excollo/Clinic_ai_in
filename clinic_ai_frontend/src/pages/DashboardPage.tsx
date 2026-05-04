@@ -62,7 +62,7 @@ export default function DashboardPage() {
         </p>
       </div>
       <div className="mb-5 flex gap-3">
-        <Link to="/patients" className="rounded-xl bg-clinic-primary px-5 py-3 text-sm font-semibold text-white">{t("dashboard.registerPatient")}</Link>
+        <Link to="/register-patient" className="rounded-xl bg-clinic-primary px-5 py-3 text-sm font-semibold text-white">{t("dashboard.registerPatient")}</Link>
         <Link to="/today-queue" className="rounded-xl border border-clinic-border bg-white px-5 py-3 text-sm font-semibold text-clinic-ink">{t("dashboard.openQueue")}</Link>
       </div>
       <div className="clinic-card p-4">
@@ -77,15 +77,20 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-2">
             {queueRows.map((row) => (
-              <div key={row.visit_id} className="flex items-center justify-between rounded-lg border border-clinic-border px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">{row.name || row.patient_id}</p>
+              <Link
+                key={row.visit_id}
+                to={`/visits/${row.visit_id}`}
+                className="flex items-center justify-between rounded-lg border border-clinic-border px-3 py-2 transition-colors hover:border-clinic-primary/35 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clinic-primary focus-visible:ring-offset-2"
+                aria-label={`Open visit for ${row.name || row.patient_id}`}
+              >
+                <div className="min-w-0 pr-3">
+                  <p className="truncate text-sm font-medium">{row.name || row.patient_id}</p>
                   <p className="text-xs text-clinic-muted">{row.token_number || "Token pending"}</p>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-xs ${statusChipClass(row.status)}`}>
+                <span className={`shrink-0 rounded-full px-2 py-1 text-xs capitalize ${statusChipClass(row.status)}`}>
                   {row.status}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

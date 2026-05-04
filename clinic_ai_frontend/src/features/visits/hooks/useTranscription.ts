@@ -74,6 +74,64 @@ function adaptDialogueResponse(
   };
 }
 
+/** True when structured turns contain non-empty dialogue text (API may omit or null this while transcript exists). */
+function structuredDialogueHasContent(dialogue: unknown): dialogue is Array<Record<string, string>> {
+  if (!Array.isArray(dialogue) || dialogue.length === 0) {
+    return false;
+  }
+  return dialogue.some((turn) => {
+    if (!turn || typeof turn !== "object") return false;
+    const text = String(Object.values(turn as Record<string, unknown>)[0] ?? "").trim();
+    return text.length > 0;
+  });
+}
+
+/**
+ * Builds UI segments from GET /dialogue payload. Uses structured_dialogue when present;
+ * otherwise falls back to plain `transcript` (stored in DB) so reopened visits always show content.
+ */
+export function transcriptionResultFromDialoguePayload(
+  data: {
+    structured_dialogue?: unknown;
+    transcript?: string | null;
+    audio_file_path?: string | null;
+  },
+  languageMix: string,
+  transcriptIdFallback: string,
+): TranscriptionResult {
+  const transcriptId = String(data?.audio_file_path ?? transcriptIdFallback);
+  const structuredRaw = data?.structured_dialogue;
+  if (structuredDialogueHasContent(structuredRaw)) {
+    return adaptDialogueResponse(structuredRaw as Array<Record<string, string>>, String(languageMix || "en"), transcriptId);
+  }
+  const raw = String(data?.transcript ?? "").trim();
+  if (raw.length > 0) {
+    const chunks = raw
+      .split(/\n\n+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const parts = chunks.length > 0 ? chunks : [raw];
+    const segments: TranscriptionSegment[] = parts.map((text, index) => ({
+      speaker: "Patient",
+      timestamp: toTimestamp(index + 1),
+      text,
+      confidence: 0.85,
+    }));
+    return {
+      transcript_id: transcriptId,
+      segments,
+      average_confidence: 0.85,
+      language_detected: String(languageMix || "en"),
+    };
+  }
+  return {
+    transcript_id: transcriptId,
+    segments: [],
+    average_confidence: 0,
+    language_detected: String(languageMix || "en"),
+  };
+}
+
 export function extractApiErrorMessage(error: unknown): string {
   const maybe = error as {
     response?: { data?: { detail?: string; message?: string } };
@@ -150,11 +208,13 @@ export async function pollTranscriptionUntilTerminal(params: {
           // Structure endpoint can fail if already structured; ignore and continue.
         }
         const dialogueResponse = await apiClient.get(`/api/notes/${params.patientId}/visits/${params.visitId}/dialogue`);
-        const structured = (dialogueResponse.data?.structured_dialogue ?? []) as Array<Record<string, string>>;
-        const transcriptId = String(dialogueResponse.data?.audio_file_path ?? `${params.visitId}-transcript`);
         return {
           kind: "completed",
-          result: adaptDialogueResponse(structured, String(params.languageMix || "en"), transcriptId),
+          result: transcriptionResultFromDialoguePayload(
+            dialogueResponse.data,
+            params.languageMix,
+            `${params.visitId}-transcript`,
+          ),
           jobId,
           lastPayload: payload,
         };
@@ -202,7 +262,9 @@ export async function fetchTranscriptionResult(params: {
   languageMix: string;
 }): Promise<TranscriptionResult> {
   const dialogueResponse = await apiClient.get(`/api/notes/${params.patientId}/visits/${params.visitId}/dialogue`);
-  const structured = (dialogueResponse.data?.structured_dialogue ?? []) as Array<Record<string, string>>;
-  const transcriptId = String(dialogueResponse.data?.audio_file_path ?? `${params.visitId}-transcript`);
-  return adaptDialogueResponse(structured, String(params.languageMix || "en"), transcriptId);
+  return transcriptionResultFromDialoguePayload(
+    dialogueResponse.data,
+    params.languageMix,
+    `${params.visitId}-transcript`,
+  );
 }

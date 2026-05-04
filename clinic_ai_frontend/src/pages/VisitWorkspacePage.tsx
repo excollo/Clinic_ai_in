@@ -176,8 +176,12 @@ export default function VisitWorkspacePage() {
 
   useEffect(() => {
     if (!current) return;
-    if (!visit.visitId || visit.visitId !== current.visitId) {
-      useVisitStore.getState().setVisit({
+    const store = useVisitStore.getState();
+    const sameVisit = store.visitId === current.visitId;
+    const needsFullInit = !store.visitId || !sameVisit;
+
+    if (needsFullInit) {
+      store.setVisit({
         visitId: current.visitId,
         patientId: current.patientId,
         patientName: current.patientName,
@@ -190,6 +194,11 @@ export default function VisitWorkspacePage() {
         completedTabs: new Set<string>(),
         chiefComplaint: current.chiefComplaint,
       });
+      return;
+    }
+
+    if (store.chiefComplaint !== current.chiefComplaint) {
+      useVisitStore.setState({ chiefComplaint: current.chiefComplaint });
     }
   }, [current, visit.visitId]);
 
