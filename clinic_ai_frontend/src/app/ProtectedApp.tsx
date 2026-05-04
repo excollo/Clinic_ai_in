@@ -7,6 +7,7 @@ import { ProtectedShell } from "@/components/ProtectedShell";
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const RegisterPatientPage = lazy(() => import("@/pages/RegisterPatientPage"));
 const PatientsPage = lazy(() => import("@/pages/PatientsPage"));
+const TodayQueuePage = lazy(() => import("@/pages/TodayQueuePage"));
 const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
 const PatientDeclinedConsentPage = lazy(() => import("@/pages/PatientDeclinedConsentPage"));
 const WalkInConfirmationPage = lazy(() => import("@/pages/WalkInConfirmationPage"));
@@ -32,6 +33,7 @@ export default function ProtectedApp() {
           <Route path="/" element={<ProtectedShell />}>
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="register-patient" element={<RegisterPatientPage />} />
+            <Route path="today-queue" element={<TodayQueuePage />} />
             <Route path="patients" element={<PatientsPage />} />
             <Route path="patients/:id" element={<PatientDetailPage />} />
             <Route path="consent/:visitId" element={<ConsentPage />} />

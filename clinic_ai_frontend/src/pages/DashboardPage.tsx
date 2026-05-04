@@ -63,11 +63,13 @@ export default function DashboardPage() {
       </div>
       <div className="mb-5 flex gap-3">
         <Link to="/patients" className="rounded-xl bg-clinic-primary px-5 py-3 text-sm font-semibold text-white">{t("dashboard.registerPatient")}</Link>
-        <Link to="/patients" className="rounded-xl border border-clinic-border bg-white px-5 py-3 text-sm font-semibold text-clinic-ink">{t("dashboard.openQueue")}</Link>
+        <Link to="/today-queue" className="rounded-xl border border-clinic-border bg-white px-5 py-3 text-sm font-semibold text-clinic-ink">{t("dashboard.openQueue")}</Link>
       </div>
       <div className="clinic-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold">Today&apos;s Queue</p>
+          <Link to="/today-queue" className="text-sm font-semibold text-clinic-primary hover:underline">
+            Today&apos;s Queue
+          </Link>
           {queueQuery.isFetching && <p className="text-xs text-clinic-muted">Refreshing...</p>}
         </div>
         {queueRows.length === 0 ? (

@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useState } from "react";
 import { Search, UserRound, QrCode, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
-import { usePatients } from "@/features/patients/hooks/usePatients";
+import { PATIENT_LIST_PAGE_SIZE, usePatients } from "@/features/patients/hooks/usePatients";
 
 export default function PatientsPage() {
   const { t } = useTranslation();
@@ -12,48 +11,24 @@ export default function PatientsPage() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<string[]>(["all"]);
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     const id = setTimeout(() => setSearch(query), 300);
     return () => clearTimeout(id);
   }, [query]);
 
-  const patientQuery = usePatients(search, filters);
-
+  const filtersKey = useMemo(() => filters.join(","), [filters]);
   useEffect(() => {
-    if (!sentinel.current) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && patientQuery.hasNextPage && !patientQuery.isFetchingNextPage) {
-        void patientQuery.fetchNextPage();
-      }
-    });
-    observer.observe(sentinel.current);
-    return () => observer.disconnect();
-  }, [patientQuery]);
+    setPage(0);
+  }, [search, filtersKey]);
 
-  useEffect(() => {
-    const node = listRef.current;
-    if (!node) return;
-    const onScroll = () => {
-      const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
-      if (nearBottom && patientQuery.hasNextPage && !patientQuery.isFetchingNextPage) {
-        void patientQuery.fetchNextPage();
-      }
-    };
-    node.addEventListener("scroll", onScroll);
-    return () => node.removeEventListener("scroll", onScroll);
-  }, [patientQuery.hasNextPage, patientQuery.isFetchingNextPage, patientQuery.fetchNextPage]);
-
-  const rows = useMemo(() => patientQuery.data?.pages.flatMap((p) => p.data) ?? [], [patientQuery.data]);
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 88,
-    overscan: 8,
-  });
-  const total = patientQuery.data?.pages[0]?.total ?? 0;
+  const patientQuery = usePatients(search, filters, page);
+  const rows = patientQuery.data?.data ?? [];
+  const total = patientQuery.data?.total ?? 0;
+  const hasNextPage = total > 0 && (page + 1) * PATIENT_LIST_PAGE_SIZE < total;
+  const rangeStart = total === 0 ? 0 : page * PATIENT_LIST_PAGE_SIZE + 1;
+  const rangeEnd = Math.min((page + 1) * PATIENT_LIST_PAGE_SIZE, total);
 
   const toggleFilter = (key: string) => {
     if (key === "all") return setFilters(["all"]);
@@ -105,32 +80,57 @@ export default function PatientsPage() {
             <button onClick={() => navigate("/register-patient")} className="rounded-xl bg-clinic-primary px-4 py-2 text-white">{t("patients.registerFirst")}</button>
           </div>
         ) : (
-          <div ref={listRef} className="max-h-[70vh] overflow-auto">
-            <div className="relative w-full" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-              {virtualizer.getVirtualItems().map((item) => {
-                const p = rows[item.index];
-                return (
-              <button key={p.id} style={{ transform: `translateY(${item.start}px)` }} onClick={() => navigate(`/patients/${p.id}`, { state: { patient: p } })} className="absolute left-0 top-0 grid w-full grid-cols-1 gap-2 border-b border-clinic-border px-4 py-3 text-left hover:bg-slate-50 md:grid-cols-5">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">{p.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
-                  <div>
-                    <p className="text-sm font-semibold">{p.name}</p>
-                    <p className="text-xs text-clinic-muted">{p.age} · {p.sex}</p>
+          <>
+            <div className="max-h-[70vh] overflow-auto">
+              {rows.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => navigate(`/patients/${p.id}`, { state: { patient: p } })}
+                  className="grid w-full grid-cols-1 gap-2 border-b border-clinic-border px-4 py-3 text-left hover:bg-slate-50 md:grid-cols-5"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">{p.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}</span>
+                    <div>
+                      <p className="text-sm font-semibold">{p.name}</p>
+                      <p className="text-xs text-clinic-muted">{p.age} · {p.sex}</p>
+                    </div>
                   </div>
-                </div>
-                <p className="text-sm">{p.mobile}</p>
-                <p className="text-sm">{p.visitCount} {t("patients.visitsSuffix")}</p>
-                <p className="text-sm text-clinic-muted">{formatDistanceToNow(new Date(p.lastSeen), { addSuffix: true })}</p>
-                <div className="flex gap-1">
-                  {p.abhaLinked && <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{t("patients.badgeAbha")}</span>}
-                  {p.chronic && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{t("patients.badgeChronic")}</span>}
-                </div>
-              </button>
-                );
-              })}
+                  <p className="text-sm">{p.mobile}</p>
+                  <p className="text-sm">{p.visitCount} {t("patients.visitsSuffix")}</p>
+                  <p className="text-sm text-clinic-muted">{formatDistanceToNow(new Date(p.lastSeen), { addSuffix: true })}</p>
+                  <div className="flex gap-1">
+                    {p.abhaLinked && <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{t("patients.badgeAbha")}</span>}
+                    {p.chronic && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{t("patients.badgeChronic")}</span>}
+                  </div>
+                </button>
+              ))}
             </div>
-            <div ref={sentinel} className="h-4" />
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-clinic-border bg-slate-50/80 px-4 py-3">
+              <p className="text-xs text-clinic-muted">
+                {t("patients.pageRange", { start: rangeStart, end: rangeEnd, total })}
+                {patientQuery.isFetching && <span className="ml-2 text-clinic-primary">· {t("common.loading")}</span>}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={page === 0 || patientQuery.isFetching}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="rounded-xl border border-clinic-border bg-white px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  {t("patients.previousPage")}
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasNextPage || patientQuery.isFetching}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded-xl border border-clinic-border bg-white px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  {t("patients.nextPage")}
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 

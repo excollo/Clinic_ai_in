@@ -106,6 +106,16 @@
     "registerPatient": "Register patient",
     "openQueue": "Open today's queue"
   },
+  "todayQueue": {
+    "title": "Today's visits",
+    "subtitle": "Everyone who registered a visit today (including completed). Use Open visit to continue vitals, transcription, and notes.",
+    "allPatients": "All patients",
+    "empty": "No visits recorded for today yet.",
+    "openVisit": "Open visit",
+    "patientProfile": "Patient profile",
+    "chiefComplaint": "Chief complaint",
+    "statsLine": "{{total}} visits today · {{inConsult}} in consult · {{done}} completed"
+  },
   "tour": {
     "slide1Title": "Register walk-in patients quickly",
     "slide1Desc": "Capture consent and assign token in seconds.",
@@ -128,7 +138,10 @@
     "registerFirst": "Register patient",
     "visitsSuffix": "visits",
     "badgeChronic": "Chronic",
-    "badgeAbha": "ABHA"
+    "badgeAbha": "ABHA",
+    "previousPage": "Previous",
+    "nextPage": "Next",
+    "pageRange": "{{start}}–{{end}} of {{total}}"
   },
   "registration": {
     "title": "Register patient",
@@ -451,19 +464,31 @@
   },
   "careprep": {
     "title": "CarePrep",
-    "subtitle": "AI pre-visit summaries · review before consult",
+    "subtitle": "All visits with intake (any date). Tap the patient block for profile; Open intake for Q&A.",
     "filterToday": "Today",
     "filterPending": "Pending review",
     "filterReviewed": "Reviewed",
     "filterWalkIn": "Walk-in",
     "filterScheduled": "Scheduled",
-    "empty": "No CarePrep summaries yet · Patients will appear here after intake",
+    "empty": "No visits with intake yet. When patients complete or start intake (e.g. WhatsApp), they will appear here.",
     "redFlag": "Red flag",
     "open": "Open",
-    "review": "Review"
+    "review": "Review",
+    "searchPlaceholder": "Search by name, patient ID, mobile, or token",
+    "openSession": "Open intake",
+    "tokenPending": "Token pending",
+    "qaCount": "{{count}} Q&A"
   },
   "intake": {
-    "redFlags": "Red flags"
+    "redFlags": "Red flags",
+    "sessionTitle": "Intake session",
+    "visitMeta": "Visit {{visitId}} · Status: {{status}}",
+    "chiefComplaint": "Chief complaint",
+    "qaHeading": "Intake Q&A",
+    "questionTopicFallback": "Question",
+    "noResponsesYet": "No answers recorded yet for this visit.",
+    "noIntakeTitle": "No intake for this visit",
+    "noIntakeBody": "This visit does not have an intake form yet, or intake was not saved. Return to CarePrep to pick a visit that shows in the list."
   },
   "calendar": {
     "title": "Calendar",

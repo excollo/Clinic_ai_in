@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -66,6 +66,14 @@ export function RegisterPatientModal({
   const apptTimeForPicker = appointment_time?.trim() && /^\d{1,2}:\d{2}$/.test(appointment_time.trim())
     ? appointment_time.trim()
     : apptFallbackRef.current;
+
+  const minAppointmentDate = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
 
   if (!asPage && !open) return null;
 
@@ -143,7 +151,12 @@ export function RegisterPatientModal({
           <input className="w-full rounded-xl border border-clinic-border px-3 py-2" placeholder={t("registration.mobilePlaceholder")} value={mobile} onChange={(e) => setValue("mobile", normalizeIndianMobile(e.target.value), { shouldValidate: true })} />
           <select className="w-full rounded-xl border border-clinic-border px-3 py-2" {...register("preferred_language")}><option value="hindi">{t("registration.hindi")}</option><option value="english">{t("registration.english")}</option><option value="marathi">{t("registration.marathi")}</option><option value="tamil">{t("registration.tamil")}</option><option value="telugu">{t("registration.telugu")}</option><option value="bengali">{t("registration.bengali")}</option><option value="kannada">{t("registration.kannada")}</option></select>
           <div className="grid grid-cols-2 gap-3">
-            <input type="date" className="rounded-xl border border-clinic-border px-3 py-2" {...register("appointment_date")} />
+            <input
+              type="date"
+              min={minAppointmentDate}
+              className="rounded-xl border border-clinic-border px-3 py-2"
+              {...register("appointment_date")}
+            />
             <TimeSelect12h
               value={apptTimeForPicker}
               displayFallback={apptFallbackRef.current}

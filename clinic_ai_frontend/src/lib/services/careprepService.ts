@@ -1,30 +1,17 @@
 import apiClient from "@/lib/apiClient";
 
-type QueueApiRow = {
-  patient_id?: string;
-  visit_id?: string;
-  token_number?: string;
-  name?: string;
-  status?: string;
-};
-
 type IntakeSessionApi = {
   visit_id?: string;
   patient_id?: string;
   status?: string;
   illness?: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
   question_answers?: Array<{
     question?: string;
     answer?: string;
     topic?: string | null;
   }>;
-};
-
-type PatientApi = {
-  patient_id?: string;
-  name?: string;
-  mobile?: string;
 };
 
 export type CareprepSessionRow = {
@@ -52,55 +39,70 @@ export type CareprepSessionDetail = {
   intakeStatus: string;
   illness: string;
   updatedAt: string | null;
+  createdAt: string | null;
   questionAnswers: IntakeQuestionAnswer[];
 };
 
+type IntakeSessionsApiRow = {
+  visit_id?: string;
+  patient_id?: string;
+  patient_name?: string;
+  mobile?: string;
+  token_number?: string;
+  visit_status?: string;
+  workflow_type?: string;
+  intake_status?: string;
+  question_count?: number;
+  illness?: string;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+type IntakeSessionsListResponse = {
+  sessions?: IntakeSessionsApiRow[];
+  total?: number;
+};
+
+/** True when the API returned a real intake session (not the empty placeholder). */
+export function intakeSessionApiHasForm(intake: IntakeSessionApi | null | undefined): boolean {
+  if (!intake) return false;
+  const qa = Array.isArray(intake.question_answers) ? intake.question_answers : [];
+  if (qa.length > 0) return true;
+  if (String(intake.illness || "").trim().length > 0) return true;
+  const st = String(intake.status || "").toLowerCase();
+  if (st && st !== "not_started") return true;
+  if (intake.updated_at || intake.created_at) return true;
+  return false;
+}
+
+export function careprepDetailHasIntake(d: CareprepSessionDetail): boolean {
+  if (d.questionAnswers.length > 0) return true;
+  if (d.illness.trim().length > 0) return true;
+  if (d.intakeStatus && d.intakeStatus !== "not_started") return true;
+  if (d.updatedAt || d.createdAt) return true;
+  return false;
+}
+
+/** All intake-backed visits for this doctor (any date), newest activity first. */
 export async function fetchCareprepSessions(doctorId: string): Promise<CareprepSessionRow[]> {
   if (!doctorId) return [];
-  const [queueResponse, patientsResponse] = await Promise.all([
-    apiClient.get(`/doctor/${doctorId}/queue`),
-    apiClient.get("/patients", { params: { limit: 500, offset: 0, search: "", filter: "all" } }),
-  ]);
-  const queueRows = Array.isArray(queueResponse.data?.patients) ? (queueResponse.data.patients as QueueApiRow[]) : [];
-  const patientRows = Array.isArray(patientsResponse.data?.patients) ? (patientsResponse.data.patients as PatientApi[]) : [];
-  const patientById = new Map<string, PatientApi>();
-  patientRows.forEach((row) => {
-    const pid = String(row.patient_id || "");
-    if (pid) patientById.set(pid, row);
+  const res = await apiClient.get(`/doctor/${doctorId}/intake-sessions`, {
+    params: { limit: 500, offset: 0 },
   });
-
-  const details = await Promise.all(
-    queueRows.map(async (row) => {
-      const visitId = String(row.visit_id || "");
-      if (!visitId) return null;
-      try {
-        const intake = await apiClient.get(`/api/visits/${visitId}/intake-session`);
-        return { visitId, intake: intake.data as IntakeSessionApi, queue: row };
-      } catch {
-        return { visitId, intake: null, queue: row };
-      }
-    }),
-  );
-
-  return details
-    .filter((item): item is NonNullable<typeof item> => Boolean(item))
-    .map((item) => {
-      const patientId = String(item.queue.patient_id || item.intake?.patient_id || "");
-      const patient = patientById.get(patientId);
-      const questionAnswers = Array.isArray(item.intake?.question_answers) ? item.intake?.question_answers : [];
-      return {
-        visitId: item.visitId,
-        patientId,
-        patientName: String(item.queue.name || patient?.name || "Patient"),
-        mobile: String(patient?.mobile || ""),
-        token: String(item.queue.token_number || ""),
-        status: String(item.queue.status || "waiting"),
-        intakeStatus: String(item.intake?.status || "not_started"),
-        illness: String(item.intake?.illness || ""),
-        questionCount: questionAnswers.length,
-        updatedAt: item.intake?.updated_at || null,
-      };
-    });
+  const body = res.data as IntakeSessionsListResponse;
+  const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+  return sessions.map((s) => ({
+    visitId: String(s.visit_id || ""),
+    patientId: String(s.patient_id || ""),
+    patientName: String(s.patient_name || "Patient"),
+    mobile: String(s.mobile || ""),
+    token: String(s.token_number || ""),
+    status: String(s.visit_status || ""),
+    intakeStatus: String(s.intake_status || "not_started"),
+    illness: String(s.illness || ""),
+    questionCount: Number(s.question_count ?? 0),
+    updatedAt: s.updated_at != null ? String(s.updated_at) : null,
+  }));
 }
 
 export async function fetchCareprepSessionByVisitId(visitId: string): Promise<CareprepSessionDetail> {
@@ -112,6 +114,7 @@ export async function fetchCareprepSessionByVisitId(visitId: string): Promise<Ca
     intakeStatus: String(data.status || "not_started"),
     illness: String(data.illness || ""),
     updatedAt: data.updated_at || null,
+    createdAt: data.created_at || null,
     questionAnswers: (data.question_answers || []).map((qa) => ({
       question: String(qa.question || ""),
       answer: String(qa.answer || ""),

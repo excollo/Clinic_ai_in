@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/apiClient";
 
 export type PatientRecord = {
@@ -35,14 +35,14 @@ type RawPatient = {
   updated_at?: string | null;
 };
 
-type RealPatientsResponse = {
-  patients: RawPatient[];
-  total: number;
-  limit: number;
-  offset: number;
+type ApiPatientsResponse = {
+  patients?: RawPatient[];
+  total?: number;
+  limit?: number;
+  offset?: number;
 };
 
-const PAGE_SIZE = 20;
+export const PATIENT_LIST_PAGE_SIZE = 10;
 
 function normalizeSex(value: string | null | undefined): PatientRecord["sex"] {
   const v = String(value || "").toLowerCase();
@@ -71,40 +71,14 @@ function normalizePatient(raw: RawPatient): PatientRecord {
   };
 }
 
-function applyClientFilters(
-  patients: PatientRecord[],
-  search: string,
-  filters: string[],
-): PatientRecord[] {
-  const q = search.trim().toLowerCase();
-  let filtered = patients;
-  if (q) {
-    filtered = filtered.filter((p) => p.name.toLowerCase().includes(q) || p.mobile.includes(q));
+/** Map UI multi-filter to single contract `filter` query param. */
+function resolveListFilter(filters: string[]): string {
+  if (filters.includes("all") || filters.length === 0) return "all";
+  const order = ["abha", "chronic", "last30"];
+  for (const key of order) {
+    if (filters.includes(key)) return key;
   }
-  if (filters.includes("chronic")) filtered = filtered.filter((p) => p.chronic);
-  if (filters.includes("abha")) filtered = filtered.filter((p) => p.abhaLinked);
-  if (filters.includes("last30")) {
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    filtered = filtered.filter((p) => new Date(p.lastSeen).getTime() >= cutoff);
-  }
-  return filtered;
-}
-
-async function fetchAllPatients(search: string, filter: string): Promise<RealPatientsResponse> {
-  const response = await apiClient.get("/patients", {
-    params: { limit: PAGE_SIZE, offset: 0, search, filter },
-  });
-  const list = Array.isArray(response.data)
-    ? (response.data as RawPatient[])
-    : Array.isArray(response.data?.patients)
-      ? (response.data.patients as RawPatient[])
-      : [];
-  return {
-    patients: list,
-    total: list.length,
-    limit: PAGE_SIZE,
-    offset: 0,
-  };
+  return "all";
 }
 
 export async function fetchPatientsPageReal(params: {
@@ -113,30 +87,42 @@ export async function fetchPatientsPageReal(params: {
   search: string;
   filters: string[];
 }) {
-  const selectedFilter = params.filters.includes("all") ? "all" : params.filters[0] || "all";
-  const raw = await fetchAllPatients(params.search, selectedFilter);
-  const normalized = raw.patients.map(normalizePatient);
-  const filtered = applyClientFilters(normalized, params.search, params.filters);
-  const total = filtered.length;
-  const data = filtered.slice(params.offset, params.offset + params.limit);
+  const filter = resolveListFilter(params.filters);
+  const response = await apiClient.get("/patients", {
+    params: {
+      limit: params.limit,
+      offset: params.offset,
+      search: params.search,
+      filter,
+    },
+  });
+  const body = response.data as ApiPatientsResponse | RawPatient[];
+  const list = Array.isArray(body)
+    ? (body as RawPatient[])
+    : Array.isArray((body as ApiPatientsResponse).patients)
+      ? ((body as ApiPatientsResponse).patients as RawPatient[])
+      : [];
+  const total =
+    typeof body === "object" && body !== null && !Array.isArray(body) && "total" in body
+      ? Number((body as ApiPatientsResponse).total ?? list.length)
+      : list.length;
+  const normalized = list.map(normalizePatient);
   return {
-    data,
+    data: normalized,
     total,
-    hasMore: params.offset + params.limit < total,
+    hasMore: params.offset + normalized.length < total,
   };
 }
 
-export function usePatients(search: string, filters: string[]) {
-  return useInfiniteQuery({
-    queryKey: ["patients", search, filters.join(",")],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
+export function usePatients(search: string, filters: string[], page: number) {
+  return useQuery({
+    queryKey: ["patients", search, filters.join(","), page],
+    queryFn: () =>
       fetchPatientsPageReal({
-        offset: pageParam,
-        limit: PAGE_SIZE,
+        offset: page * PATIENT_LIST_PAGE_SIZE,
+        limit: PATIENT_LIST_PAGE_SIZE,
         search,
         filters,
       }),
-    getNextPageParam: (lastPage, allPages) => (lastPage.hasMore ? allPages.length * PAGE_SIZE : undefined),
   });
 }
