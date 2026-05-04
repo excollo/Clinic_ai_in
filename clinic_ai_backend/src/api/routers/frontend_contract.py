@@ -1270,6 +1270,7 @@ def continuity_summary(
 @router.get("/doctor/{doctor_id}/queue")
 def doctor_queue(
     doctor_id: str,
+    include_completed: bool = False,
     auth: dict[str, str] = Depends(require_contract_auth),
 ) -> dict[str, Any]:
     _ = auth
@@ -1309,9 +1310,10 @@ def doctor_queue(
                 }
             )
     active_visits = [v for v in all_today if str(v.get("status") or "").lower() not in {"done", "completed"}]
+    visits_for_list = all_today if include_completed else active_visits
     patients_map = {p["patient_id"]: p for p in db.patients.find({}, {"_id": 0}) if p.get("patient_id")}
     patients = []
-    for v in active_visits:
+    for v in visits_for_list:
         pid = str(v.get("patient_id") or "")
         p = patients_map.get(pid, {})
         token = str(v.get("token_number") or "")
