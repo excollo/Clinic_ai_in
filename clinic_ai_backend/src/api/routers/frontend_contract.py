@@ -765,12 +765,48 @@ def patients_list(
             "visit_count": int(r.get("visit_count") or 0),
             "created_at": r.get("created_at"),
             "updated_at": r.get("updated_at"),
+            "last_visit_date": r.get("last_visit_date"),
             "chronic_conditions": r.get("chronic_conditions") or [],
         }
         for r in rows
     ]
     if filter == "abha":
         mapped = [r for r in mapped if r.get("abha_id")]
+    elif filter == "chronic":
+        mapped = [r for r in mapped if len(r.get("chronic_conditions") or []) > 0]
+    elif filter == "last30":
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        def _is_recent(m: dict[str, Any]) -> bool:
+            for key in ("updated_at", "last_visit_date", "created_at"):
+                ts = m.get(key)
+                if not ts:
+                    continue
+                try:
+                    if isinstance(ts, datetime):
+                        dt = (
+                            ts.replace(tzinfo=timezone.utc)
+                            if ts.tzinfo is None
+                            else ts.astimezone(timezone.utc)
+                        )
+                    else:
+                        s = str(ts).replace("Z", "+00:00")
+                        dt = datetime.fromisoformat(s)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        else:
+                            dt = dt.astimezone(timezone.utc)
+                    return dt >= cutoff
+                except Exception:
+                    continue
+            return False
+
+        mapped = [r for r in mapped if _is_recent(r)]
+
+    def _patient_list_sort_key(m: dict[str, Any]) -> str:
+        return str(m.get("updated_at") or m.get("last_visit_date") or m.get("created_at") or "")
+
+    mapped.sort(key=_patient_list_sort_key, reverse=True)
     total = len(mapped)
     sliced = mapped[offset : offset + limit]
     _set_audit_state(request, action="patients_listed", resource_type="patient", resource_id=doctor_id, context={"filter": filter})
