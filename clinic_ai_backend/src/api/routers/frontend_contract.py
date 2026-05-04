@@ -8,7 +8,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 import httpx
 from pymongo import ReturnDocument
@@ -40,6 +40,7 @@ from src.application.utils.patient_id_crypto import resolve_internal_patient_id
 from src.core.auth import hash_password, verify_password
 from src.core.config import get_settings
 from src.application.services.intake_chat_service import IntakeChatService
+from src.application.utils.appointment_schedule import registration_schedule_valid
 from jose import jwt
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,48 @@ def _as_utc_datetime(value: Any) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _visit_scope_for_doctor(doctor_id: str) -> dict[str, Any]:
+    return {
+        "$or": [
+            {"doctor_id": doctor_id},
+            {"provider_id": doctor_id},
+            {"doctor_id": ""},
+            {"doctor_id": None},
+            {"doctor_id": {"$exists": False}},
+        ]
+    }
+
+
+def _intake_session_has_content_for_list(session: dict[str, Any]) -> bool:
+    answers = session.get("answers") or []
+    if isinstance(answers, list) and len(answers) > 0:
+        return True
+    if str(session.get("illness") or "").strip():
+        return True
+    st = str(session.get("status") or "").lower()
+    if st and st != "not_started":
+        return True
+    if session.get("updated_at") is not None or session.get("created_at") is not None:
+        return True
+    return False
+
+
+def _session_updated_ts(session: dict[str, Any]) -> datetime:
+    for key in ("updated_at", "created_at"):
+        v = session.get(key)
+        if isinstance(v, datetime):
+            dt = _as_utc_datetime(v)
+            if dt is not None:
+                return dt
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _serialize_json_dt(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
 
 
 def _generate_dynamic_vitals_with_llm(chief_complaint: str) -> list[dict[str, Any]]:
@@ -621,11 +664,14 @@ def patients_register(
             status="failure",
         )
         raise _error(403, "consent withdrawn; re-consent required before starting a new visit")
+    now = datetime.now(timezone.utc)
+    ok, msg = registration_schedule_valid(body.scheduled_date, body.scheduled_time, now=now)
+    if not ok:
+        raise _error(422, msg)
     patient_id = str(existing_patient.get("patient_id")) if existing_patient else f"pat_{uuid4().hex[:10]}"
     visit_id = f"vis_{uuid4().hex[:10]}"
     token_number = None
     whatsapp_triggered = False
-    now = datetime.now(timezone.utc)
     if existing_patient:
         db.patients.update_one(
             {"patient_id": patient_id},
@@ -1341,6 +1387,67 @@ def doctor_queue(
     in_consult = sum(1 for v in active_visits if str(v.get("status") or "").lower() == "in_consult")
     done = sum(1 for v in all_today if str(v.get("status") or "").lower() in {"done", "completed"})
     return {"patients": patients, "total_today": total_today, "in_consult": in_consult, "done": done}
+
+
+@router.get("/doctor/{doctor_id}/intake-sessions")
+def doctor_intake_sessions(
+    request: Request,
+    doctor_id: str,
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    auth: dict[str, str] = Depends(require_contract_auth),
+) -> dict[str, Any]:
+    """All visits (any date) under this doctor scope that have a meaningful intake session."""
+    _ = auth
+    db = get_database()
+    scope = _visit_scope_for_doctor(doctor_id)
+    patients_map = {str(p["patient_id"]): p for p in db.patients.find({}, {"_id": 0}) if p.get("patient_id")}
+
+    by_visit: dict[str, tuple[datetime, dict[str, Any]]] = {}
+    scan_cap = 12_000
+    for session in db.intake_sessions.find({}, {"_id": 0}).sort("updated_at", -1).limit(scan_cap):
+        vid = str(session.get("visit_id") or "").strip()
+        if not vid:
+            continue
+        visit = db.visits.find_one({"$and": [{"$or": [{"visit_id": vid}, {"id": vid}]}, scope]})
+        if not visit:
+            continue
+        if not _intake_session_has_content_for_list(session):
+            continue
+        ts = _session_updated_ts(session)
+        pid = str(visit.get("patient_id") or session.get("patient_id") or "")
+        p = patients_map.get(pid, {})
+        answers = session.get("answers") or []
+        q_count = len(answers) if isinstance(answers, list) else 0
+        row = {
+            "visit_id": vid,
+            "patient_id": pid,
+            "patient_name": str(p.get("name") or ""),
+            "mobile": str(p.get("mobile") or ""),
+            "token_number": str(visit.get("token_number") or ""),
+            "visit_status": str(visit.get("status") or "open"),
+            "workflow_type": str(visit.get("workflow_type") or ""),
+            "intake_status": str(session.get("status") or "not_started"),
+            "question_count": q_count,
+            "illness": str(session.get("illness") or ""),
+            "updated_at": _serialize_json_dt(session.get("updated_at")),
+            "created_at": _serialize_json_dt(session.get("created_at")),
+        }
+        prev = by_visit.get(vid)
+        if prev is None or ts >= prev[0]:
+            by_visit[vid] = (ts, row)
+
+    rows = [pair[1] for pair in sorted(by_visit.values(), key=lambda x: x[0], reverse=True)]
+    total = len(rows)
+    sliced = rows[offset : offset + limit]
+    _set_audit_state(
+        request,
+        action="intake_sessions_listed",
+        resource_type="doctor",
+        resource_id=doctor_id,
+        context={"total": total, "limit": limit, "offset": offset},
+    )
+    return {"sessions": sliced, "total": total}
 
 
 @router.post("/whatsapp/send")

@@ -1,5 +1,5 @@
 """Visit routes module."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from src.adapters.db.mongo.client import get_database
 from src.api.schemas.patient import ScheduleVisitIntakeRequest, ScheduleVisitIntakeResponse
 from src.application.services.intake_chat_service import IntakeChatService
+from src.application.utils.appointment_schedule import appointment_time_hhmm_valid
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 router = APIRouter(prefix="/api/visits", tags=["Visits"])
 
@@ -76,16 +77,6 @@ def _extract_chief_complaint(db, patient_id: str, visit_id: str) -> str | None:
     return None
 
 
-def _appointment_time_valid(value: str) -> bool:
-    parts = (value or "").strip().split(":")
-    if len(parts) != 2:
-        return False
-    hour, minute = parts[0], parts[1]
-    if len(hour) != 2 or len(minute) != 2 or not hour.isdigit() or not minute.isdigit():
-        return False
-    return 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59
-
-
 def _intake_send_allowed(db, visit_id: str) -> tuple[bool, bool]:
     """Return (allow_whatsapp_intake, skipped_due_to_existing_session)."""
     session = db.intake_sessions.find_one({"visit_id": visit_id}, sort=[("updated_at", -1)])
@@ -139,7 +130,7 @@ def _set_visit_status(db, visit_id: str, status: str) -> dict:
 @router.post("/{visit_id}/schedule-intake", response_model=ScheduleVisitIntakeResponse)
 def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRequest) -> ScheduleVisitIntakeResponse:
     """Attach appointment time to a visit and start WhatsApp intake when appropriate."""
-    if not _appointment_time_valid(payload.appointment_time):
+    if not appointment_time_hhmm_valid(payload.appointment_time):
         raise HTTPException(status_code=422, detail="appointment_time must be HH:MM in 24-hour format")
 
     try:
@@ -147,12 +138,21 @@ def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRe
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="appointment_date must be YYYY-MM-DD") from exc
 
-    today = datetime.now(timezone.utc).date()
+    now = datetime.now(timezone.utc)
+    today = now.date()
     if chosen < today or chosen > today + timedelta(days=7):
         raise HTTPException(
             status_code=422,
             detail="appointment_date must be between today and the next 7 days",
         )
+    if chosen == today:
+        h, m = map(int, payload.appointment_time.split(":"))
+        slot = datetime.combine(chosen, time(hour=h, minute=m), tzinfo=timezone.utc)
+        if slot < now:
+            raise HTTPException(
+                status_code=422,
+                detail="appointment datetime cannot be in the past",
+            )
 
     scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
     db = get_database()
@@ -169,7 +169,6 @@ def schedule_visit_and_send_intake(visit_id: str, payload: ScheduleVisitIntakeRe
     if visit_status in LOCKED_VISIT_STATUSES:
         raise HTTPException(status_code=409, detail="Completed/cancelled visits cannot be rescheduled")
 
-    now = datetime.now(timezone.utc)
     update_query = _visit_update_query(visit, resolved_visit_id)
     db.visits.update_one(
         update_query,

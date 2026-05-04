@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.adapters.db.mongo.client import get_database
 from src.application.services.intake_chat_service import IntakeChatService
+from src.application.utils.appointment_schedule import registration_schedule_valid
 from src.application.utils.patient_id_crypto import encode_patient_id, resolve_internal_patient_id
 from src.domain.value_objects.patient_id import PatientId
 from src.domain.value_objects.visit_id import VisitId
@@ -110,6 +111,13 @@ def register_patient(payload: PatientRegisterRequest) -> PatientRegisterResponse
     now = datetime.now(timezone.utc)
     scheduled_start = None
     if payload.appointment_date and payload.appointment_time:
+        ok, msg = registration_schedule_valid(
+            payload.appointment_date,
+            payload.appointment_time,
+            now=now,
+        )
+        if not ok:
+            raise HTTPException(status_code=422, detail=msg)
         scheduled_start = f"{payload.appointment_date}T{payload.appointment_time}:00"
     db = get_database()
     existing_patient = db.patients.find_one({"patient_id": internal_patient_id}) is not None
